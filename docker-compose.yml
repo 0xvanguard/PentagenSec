@@ -1,0 +1,123 @@
+# =============================================================================
+#  VANGUARD-X — Autonomous SecOps Multi-Agent Stack
+#  -----------------------------------------------------------------------------
+#  Two interconnected services on an isolated bridge network:
+#
+#    1. ollama-service  -> hosts the qwen2.5-coder:7b LLM, pulls on first boot,
+#                          exposes the OpenAI-compatible API at /v1
+#    2. secops-agents   -> the AutoGen v0.4 5-agent pipeline; only starts when
+#                          ollama-service is reported healthy by Compose
+#
+#  Single-command bring-up:  docker compose up --build
+# =============================================================================
+
+name: vanguard-x
+
+services:
+  # ---------------------------------------------------------------------------
+  # 1) Local LLM runtime (Ollama) — auto-pulls qwen2.5-coder:7b on first boot
+  # ---------------------------------------------------------------------------
+  ollama-service:
+    image: ollama/ollama:latest
+    container_name: vanguard-ollama
+    hostname: ollama-service
+    restart: unless-stopped
+    ports:
+      # Exposed for host-side debugging (e.g. `curl localhost:11434/api/tags`).
+      # Remove this mapping in hardened deployments — internal network is enough.
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - secops-net
+    environment:
+      OLLAMA_HOST: "0.0.0.0"
+      OLLAMA_KEEP_ALIVE: "24h"
+      OLLAMA_NUM_PARALLEL: "2"
+    # Override the default entrypoint so we can:
+    #   (a) start the daemon in the background
+    #   (b) wait for it to be reachable
+    #   (c) pull qwen2.5-coder:7b idempotently
+    #   (d) re-attach to the daemon as the foreground process
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        echo "[ollama-bootstrap] starting daemon..."
+        /bin/ollama serve &
+        SERVE_PID=$$!
+        echo "[ollama-bootstrap] waiting for daemon socket..."
+        until /bin/ollama list >/dev/null 2>&1; do
+          sleep 2
+        done
+        echo "[ollama-bootstrap] daemon ready."
+        if /bin/ollama list | grep -q "qwen2.5-coder:7b"; then
+          echo "[ollama-bootstrap] qwen2.5-coder:7b already present — skipping pull."
+        else
+          echo "[ollama-bootstrap] pulling qwen2.5-coder:7b (~4.7 GB, one-time)..."
+          /bin/ollama pull qwen2.5-coder:7b
+          echo "[ollama-bootstrap] pull complete."
+        fi
+        echo "[ollama-bootstrap] handing over to ollama serve (foreground)..."
+        wait $$SERVE_PID
+    healthcheck:
+      # Healthy only when the model is actually loaded — prevents the agents
+      # from racing the model pull.
+      test: ["CMD-SHELL", "ollama list 2>/dev/null | grep -q 'qwen2.5-coder:7b' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 60          # 60 * 15s = up to 15 minutes of grace for first-time pull
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # 2) AutoGen v0.4 5-agent SecOps pipeline (Recon -> Scanner -> ThreatIntel
+  #    -> SOC -> Auditor)
+  # ---------------------------------------------------------------------------
+  secops-agents:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vanguard-x/secops-agents:latest
+    container_name: vanguard-secops
+    hostname: secops-agents
+    depends_on:
+      ollama-service:
+        condition: service_healthy
+    networks:
+      - secops-net
+    environment:
+      OLLAMA_BASE_URL: "http://ollama-service:11434/v1"
+      OLLAMA_MODEL: "qwen2.5-coder:7b"
+      OLLAMA_API_KEY: "ollama-local-noop"
+      LOG_LEVEL: "INFO"
+      MAX_AGENT_TURNS: "20"
+      REQUEST_TIMEOUT_S: "240"
+      # Override SECOPS_TASK to feed a different scenario without rebuilding.
+      # SECOPS_TASK: "Custom audit prompt..."
+    volumes:
+      # Persist any reports the AuditorAgent emits to the host.
+      - ./reports:/home/secops/app/reports
+    # Hardening — runs the workload with reduced kernel privileges.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: false        # /home/secops/app/reports needs write access
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    restart: "no"           # one-shot pipeline; flip to "on-failure" for periodic runs
+    stdin_open: true
+    tty: true
+
+# -----------------------------------------------------------------------------
+# Network / Volumes
+# -----------------------------------------------------------------------------
+networks:
+  secops-net:
+    driver: bridge
+    name: vanguard-secops-net
+
+volumes:
+  ollama_models:
+    name: vanguard-ollama-models
+    # Named volume keeps the ~4.7 GB model across rebuilds — pulled only once.
