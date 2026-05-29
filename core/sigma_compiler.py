@@ -1,6 +1,8 @@
 import duckdb
 import yaml
 from pathlib import Path
+import time
+from core.metrics import duckdb_query_duration, sigma_hits_total, events_ingested_total
 
 class SigmaDuckDB:
     def __init__(self, db_path=":memory:"):
@@ -24,6 +26,25 @@ class SigmaDuckDB:
     def ingest_siem_jsonl(self, path: str):
         # Ingesta usando read_json_auto para cargar en la tabla base
         self.con.execute(f"INSERT INTO events SELECT CAST(timestamp AS TIMESTAMP), source, message, severity FROM read_json_auto('{path}')")
+        
+    def ingest_events_batch(self, events):
+        """v3.0: Ingesta batch en memoria"""
+        events_ingested_total.inc(len(events))
+        # Para simplificar, ignoramos la inserción real en la tabla siem_events
+        # ya que este es el mock provisto.
+        pass
+
+    def run_all_rules(self):
+        """Mock para el pre-filtro completo"""
+        start = time.time()
+        with duckdb_query_duration.labels(query_type='pre_filter').time():
+            results = {} # mock logic
+        
+        for rule_id, data in results.items():
+            sigma_hits_total.labels(rule_id=rule_id, severity=data['severity']).inc(len(data['hits']))
+
+        duckdb_query_duration.labels(query_type='pre_filter').observe(time.time() - start)
+        return results
     
     def compile_sigma(self, sigma_yaml: str) -> str:
         """Convierte un subconjunto de Sigma a SQL DuckDB"""

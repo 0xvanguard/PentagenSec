@@ -6,6 +6,7 @@ from core.sigma_compiler import SigmaDuckDB
 from core.graph_enrich import Neo4jEnricher
 from core.active_learning import FPLearner
 import logging
+from core.metrics import kafka_batch_duration, fp_dropped_total, fp_probability
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("streaming")
@@ -34,18 +35,21 @@ class KafkaToDuckDB:
 
     def process_batch(self, events: list) -> dict:
         """Pipeline: DuckDB ingest → Neo4j enrich → FP filter → Sigma"""
-        start = time.time()
-
-        # 1. v3.3 Active Learning: filtra FPs antes de gastar CPU
-        filtered_events = []
-        fp_dropped = 0
-        for ev in events:
-            fp_prob = self.fp_learner.predict_fp_prob(ev)
-            if fp_prob < self.fp_threshold:
-                filtered_events.append(ev)
-            else:
-                fp_dropped += 1
-                log.debug(f"FP dropped: {ev.get('cmdline', '')[:50]} prob={fp_prob:.2f}")
+        with kafka_batch_duration.time():
+            start = time.time()
+    
+            # 1. v3.3 Active Learning: filtra FPs antes de gastar CPU
+            filtered_events = []
+            fp_dropped = 0
+            for ev in events:
+                fp_prob = self.fp_learner.predict_fp_prob(ev)
+                fp_probability.observe(fp_prob)
+                if fp_prob < self.fp_threshold:
+                    filtered_events.append(ev)
+                else:
+                    fp_dropped += 1
+                    fp_dropped_total.inc()
+                    log.debug(f"FP dropped: {ev.get('cmdline', '')[:50]} prob={fp_prob:.2f}")
 
         if not filtered_events:
             return {"ingested": 0, "fp_dropped": fp_dropped, "hits": 0}

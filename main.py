@@ -264,15 +264,28 @@ if __name__ == "__main__":
                         help='v3.3: Descarta eventos si P(FP) > threshold')
     parser.add_argument('--tui', action='store_true',
                         help='v4.0: Lanza Sentinel TUI interactivo')
+    parser.add_argument('--metrics-port', type=int, default=9091,
+                        help='Puerto para Prometheus /metrics')
     args = parser.parse_args()
     
     orch = BlueTeamOrchestratorV3()
     
+    if args.stream or args.tui:
+        import uvicorn
+        from core.metrics import metrics_app
+        from threading import Thread
+        import logging
+        log = logging.getLogger("main")
+
+        def run_metrics():
+            uvicorn.run(metrics_app, host="0.0.0.0", port=args.metrics_port, log_level="warning")
+
+        Thread(target=run_metrics, daemon=True).start()
+        log.info(f"Metrics expuestos en :{args.metrics_port}/metrics")
+
     if args.stream:
         from core.streaming import KafkaToDuckDB
         import sys
-        import logging
-        log = logging.getLogger("main")
         streamer = KafkaToDuckDB(fp_threshold=args.fp_threshold)
         log.info("Modo streaming activado. Ctrl+C para salir.")
         for batch_result in streamer.run():

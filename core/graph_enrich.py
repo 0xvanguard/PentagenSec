@@ -1,5 +1,6 @@
 from neo4j import GraphDatabase
 import networkx as nx
+from core.metrics import graph_query_duration
 
 class Neo4jEnricher:
     """v3.2: Graph de procesos para blast-radius <50ms"""
@@ -29,9 +30,10 @@ class Neo4jEnricher:
 
     def blast_radius(self, process_guid: str, depth: int = 3) -> dict:
         """v3.2: Devuelve árbol de impacto en <50ms"""
-        with self.driver.session() as s:
-            result = s.run("""
-                MATCH path = (p:Process {guid: $guid})-[*1..%d]-(related)
+        with graph_query_duration.time():
+            with self.driver.session() as s:
+                result = s.run("""
+                    MATCH path = (p:Process {guid: $guid})-[*1..%d]-(related)
                 RETURN related, relationships(path) as rels
             """ % depth, guid=process_guid)
             nodes = []
