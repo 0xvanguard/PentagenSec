@@ -256,12 +256,28 @@ class BlueTeamOrchestratorV3:
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", required=True, help="Path to siem_events.jsonl")
+    parser.add_argument("--input", required=False, help="Path to siem_events.jsonl")
     parser.add_argument("--run-id", default=datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+    parser.add_argument('--stream', action='store_true',
+                        help='v3.4: Consume Kafka topic siem_raw en lugar de archivo')
+    parser.add_argument('--fp-threshold', type=float, default=0.8,
+                        help='v3.3: Descarta eventos si P(FP) > threshold')
     args = parser.parse_args()
     
     orch = BlueTeamOrchestratorV3()
     
+    if args.stream:
+        from core.streaming import KafkaToDuckDB
+        import sys
+        import logging
+        log = logging.getLogger("main")
+        streamer = KafkaToDuckDB(fp_threshold=args.fp_threshold)
+        log.info("Modo streaming activado. Ctrl+C para salir.")
+        for batch_result in streamer.run():
+            # Aquí v4.0: enviar a TUI o Prometheus
+            if batch_result['hits']:
+                log.warning(f"ALERTA: {batch_result['hits']}")
+        sys.exit(0)
     print(f"[*] Antigravity 3.0 - Run {args.run_id}")
     hashes = orch.ingest(args.input)
     print(f"[+] Ingested. DB hash: {hashes['db_hash'][:12]}")
