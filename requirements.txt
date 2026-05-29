@@ -1,22 +1,22 @@
 # =============================================================================
-# VANGUARD-X / Autonomous SecOps Multi-Agent Platform
-# Python 3.12 — async event-driven stack (Microsoft AutoGen v0.4)
+# VANGUARD-X Blue Team SecOps — Python 3.12 (async, event-driven)
+# Strictly defensive. No active scanning. No third-party network targeting.
 # =============================================================================
 
-# --- Core multi-agent framework (AutoGen v0.4 — async, event-driven) ---------
-# Pinned to the 0.4 line. Patch upgrades are allowed; no implicit jumps to 0.5+.
+# --- Multi-agent framework (AutoGen v0.4 — async, event-driven) --------------
 autogen-core>=0.4.7,<0.5
 autogen-agentchat>=0.4.7,<0.5
 autogen-ext[openai]>=0.4.7,<0.5
 
 # --- Runtime utilities --------------------------------------------------------
-# Loaded via main.py to support .env overlays in local / dev environments.
 python-dotenv>=1.0.1,<2.0
 
-# --- HTTP / networking (transitively required by autogen-ext[openai]) --------
-# Pinned explicitly to keep CVE-tracking deterministic.
+# --- HTTP / networking --------------------------------------------------------
+# Used by:
+#   * autogen-ext[openai]   -> Ollama OpenAI-compatible endpoint
+#   * notifications.py      -> Telegram Bot API + Discord webhooks
 httpx>=0.27.2,<0.29
 openai>=1.52.0,<2.0
 
-# --- Validation / schema enforcement (used by AutoGen internals + our DTOs) --
+# --- Validation / schema enforcement -----------------------------------------
 pydantic>=2.9.0,<3.0
