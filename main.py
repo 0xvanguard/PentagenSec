@@ -91,6 +91,77 @@ REJECT_TOKEN: Final[str] = "__VANGUARD_REJECT_NOTIFICATION__"
 
 
 # =============================================================================
+# Offensive-intent guard (L1 defence-in-depth)
+# -----------------------------------------------------------------------------
+# We refuse to feed any JSON batch that looks like a scan task to the agents,
+# even if every individual event would be benign on its own. The presence of
+# these keys at ANY nesting level in the input file is treated as a policy
+# violation and aborts the pipeline before the first agent is invoked.
+#
+# The LogIngestAgent's system_message contains the same deny-list as L2
+# defence — if a future edit ever weakens this Python check, the agent will
+# still refuse the batch on first inspection.
+# =============================================================================
+FORBIDDEN_BATCH_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        # Targeting
+        "target_ip", "target_host", "target_url", "target_port", "targets",
+        # Scanning intent
+        "scan_type", "scan_target", "scan_options", "scan_profile",
+        "nmap_args", "nmap_command", "nmap_options", "nmap_flags",
+        # Exploitation tooling
+        "exploit_target", "exploit_module", "exploit_options",
+        "metasploit_module", "msf_module", "msf_options",
+        "sqlmap_options", "nuclei_template", "nuclei_args",
+        # Generic offensive verbs at batch level
+        "attack_args", "attack_target", "attack_type",
+        "payload_command", "payload_url", "shellcode",
+    }
+)
+
+# A short, non-PII rejection sentence shared by L1 and L2 so audit logs are
+# greppable across enforcement points.
+OFFENSIVE_INTENT_REJECTION: Final[str] = (
+    "Rejected: Input resembles scan task, not SIEM alert."
+)
+
+
+class OffensiveIntentDetected(RuntimeError):
+    """Raised when the input batch contains keys that imply scanning intent."""
+
+    def __init__(self, offending_keys: list[str]) -> None:
+        self.offending_keys = offending_keys
+        super().__init__(
+            f"{OFFENSIVE_INTENT_REJECTION} Offending keys: {offending_keys}"
+        )
+
+
+def _walk_keys(node: object, acc: set[str]) -> None:
+    """Depth-first walk that collects every dict key (lower-cased)."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if isinstance(key, str):
+                acc.add(key.lower())
+            _walk_keys(value, acc)
+    elif isinstance(node, list):
+        for item in node:
+            _walk_keys(item, acc)
+
+
+def assert_no_offensive_intent(batch: object) -> None:
+    """
+    Raise :class:`OffensiveIntentDetected` if ``batch`` contains any key that
+    suggests the input is a scan task instead of pre-collected SIEM/EDR
+    telemetry. Pure inspection — never mutates the input, never logs PII.
+    """
+    keys: set[str] = set()
+    _walk_keys(batch, keys)
+    matches = sorted(keys & FORBIDDEN_BATCH_KEYS)
+    if matches:
+        raise OffensiveIntentDetected(matches)
+
+
+# =============================================================================
 # Runtime configuration
 # =============================================================================
 @dataclass(frozen=True, slots=True)
@@ -164,15 +235,28 @@ network. You only reason over the events provided in the user message.
 RESPONSIBILITIES
 ================
 1. Validate the JSON batch and report any malformed or missing fields.
-2. Normalise heterogeneous source schemas (Wazuh, Sysmon, Suricata,
+2. Validate that the batch is DEFENSIVE telemetry, NOT a scan task. If
+   the JSON contains any of the following keys at any nesting level,
+   stop processing IMMEDIATELY and reply with the literal sentence:
+       Rejected: Input resembles scan task, not SIEM alert.
+   Forbidden offensive-intent keys include (case-insensitive):
+   target_ip, target_host, target_url, target_port,
+   scan_type, scan_target, scan_options,
+   nmap_args, nmap_command, nmap_options,
+   exploit_target, exploit_module, exploit_options,
+   attack_args, attack_target, attack_type,
+   payload_command, payload_url,
+   metasploit_module, msf_module, sqlmap_options, nuclei_template.
+   This is a hard policy boundary. Do not proceed under any circumstance.
+3. Normalise heterogeneous source schemas (Wazuh, Sysmon, Suricata,
    Office 365, CrowdStrike, ...) into a common skeleton:
        {event_id, ts_utc, source, host, user, severity_raw, signal,
         observables, asset_context}
-3. Deduplicate near-identical events within a small time window
+4. Deduplicate near-identical events within a small time window
    (<= 60 s, same host, same rule_id) and collapse them into a single
    normalised row with an `occurrences` counter.
-4. Cluster events by (host, user, asset_team) for the next agent.
-5. Emit only the JSON described below — no prose narrative outside it.
+5. Cluster events by (host, user, asset_team) for the next agent.
+6. Emit only the JSON described below — no prose narrative outside it.
 
 OUTPUT FORMAT — STRICT
 ======================
@@ -801,6 +885,40 @@ async def main() -> int:
     except FileNotFoundError as exc:
         logger.error(str(exc))
         return 2
+
+    # 1a) Defence-in-depth: refuse any batch that looks like a scan task,
+    # even before the LogIngestAgent has a chance to inspect it. This is the
+    # L1 enforcement point; the agent's system_message replicates the same
+    # deny-list as L2 in case a future edit weakens this check.
+    try:
+        assert_no_offensive_intent(batch)
+    except OffensiveIntentDetected as exc:
+        logger.critical(
+            "OFFENSIVE-INTENT GUARD TRIGGERED — refusing batch from %s. "
+            "Offending keys: %s. %s",
+            SETTINGS.siem_events_path,
+            exc.offending_keys,
+            OFFENSIVE_INTENT_REJECTION,
+        )
+        # Persist a short audit trace so the rejection is reviewable later.
+        try:
+            SETTINGS.reports_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            audit_path = (
+                SETTINGS.reports_dir
+                / f"vanguard-x-rejection-{stamp}.txt"
+            )
+            audit_path.write_text(
+                f"{OFFENSIVE_INTENT_REJECTION}\n"
+                f"source: {SETTINGS.siem_events_path}\n"
+                f"offending_keys: {exc.offending_keys}\n"
+                f"rejected_at_utc: {stamp}\n",
+                encoding="utf-8",
+            )
+            logger.info("Rejection audit trace written to %s", audit_path)
+        except Exception as audit_exc:  # noqa: BLE001
+            logger.error("Could not persist rejection audit trace: %s", audit_exc)
+        return 4
 
     task = build_task_prompt(batch)
     logger.info(

@@ -102,7 +102,15 @@ COPY --chown=secops:secops main.py            /home/secops/app/main.py
 COPY --chown=secops:secops notifications.py   /home/secops/app/notifications.py
 COPY --chown=secops:secops sample_data        /home/secops/app/sample_data
 
-USER secops:secops
+USER 1001:1001
+
+# Defence-in-depth: the build itself fails immediately if a future edit
+# accidentally puts the runtime back on root. The assertion runs as the
+# user that will execute the ENTRYPOINT, so a positive result is proof
+# that the running process is non-privileged.
+RUN test "$(id -u)" = "1001" && test "$(id -g)" = "1001" \
+ || (echo "FATAL: container would run as $(id) — expected uid=1001 gid=1001" \
+     && exit 1)
 
 # Liveness check — verifies the Python interpreter and AutoGen import path.
 HEALTHCHECK --interval=60s --timeout=10s --start-period=15s --retries=3 \
