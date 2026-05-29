@@ -1,0 +1,26 @@
+schema: '2.0'
+stages:
+  train_fp_classifier:
+    cmd: python3 -m core.active_learning --train
+    deps:
+    - path: core/active_learning.py
+      hash: md5
+      md5: ee642bb3f18c4582b48cabf49b09e0cf
+      size: 3625
+    - path: data/feedback_labeled.jsonl
+      hash: md5
+      md5: e18f591ae8b61288b16a830f1faf1e81
+      size: 179
+    outs:
+    - path: models/fp_classifier.pkl
+      hash: md5
+      md5: ff052b84a1790c9a47166b50d7dbb94a
+      size: 1271
+    - path: models/fp_metrics.json
+      hash: md5
+      md5: 6e0882abd9e9bbcf93145296209964e8
+      size: 68
+    - path: models/tfidf_vectorizer.pkl
+      hash: md5
+      md5: 21e78e522e5dd955761a4147d5ac01d7
+      size: 1754

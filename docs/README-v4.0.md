@@ -31,3 +31,7 @@ python main.py --tui
 - AU-9: DuckDB append-only + Neo4j audit log
 - SA-22: requirements.txt con SHA-256
 - SI-4: Prometheus + Grafana alerting
+
+## v4.1 Changelog
+- DVC model versioning
+- Alerting rules and contact points

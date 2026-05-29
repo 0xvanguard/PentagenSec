@@ -1,0 +1,47 @@
+groups:
+  - name: antigravity_slo
+    interval: 30s
+    rules:
+      # IR-4: MTTD violado
+      - alert: BlastRadiusSLOViolation
+        expr: histogram_quantile(0.95, rate(antigravity_graph_query_duration_seconds_bucket[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          nist: SI-4
+        annotations:
+          summary: "Neo4j blast-radius P95 > 50ms"
+          description: "P95 latency {{ $value }}s. Kill-chain drill-down degradado."
+
+      # SI-4: FP rate sube
+      - alert: FPRateHigh
+        expr: rate(antigravity_fp_dropped_total[5m]) / rate(antigravity_events_ingested_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          nist: SI-4
+        annotations:
+          summary: "FP drop rate >5%"
+          description: "Clasificador descartando {{ $value | humanizePercentage }}. Revisar drift."
+
+      # AU-9: Kafka lag crítico
+      - alert: KafkaConsumerLag
+        expr: max(antigravity_kafka_consumer_lag) > 10000
+        for: 1m
+        labels:
+          severity: critical
+          nist: AU-9
+        annotations:
+          summary: "Kafka lag >10k msgs"
+          description: "Pipeline atrasado. Riesgo pérdida cadena de custodia."
+
+      # IR-4: Sigma spike
+      - alert: SigmaHitSpike
+        expr: sum(rate(antigravity_sigma_hits_total{severity="critical"}[1m])) > 50
+        for: 1m
+        labels:
+          severity: critical
+          nist: IR-4
+        annotations:
+          summary: "Spike de hits críticos: {{ $value }}/s"
+          description: "Posible incidente activo. Revisar TUI."

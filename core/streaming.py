@@ -91,6 +91,14 @@ class KafkaToDuckDB:
                     batch = []
                     yield result # Para TUI o métricas
 
+                from kafka import TopicPartition
+                from core.metrics import kafka_lag
+                partitions = self.consumer.assignment()
+                for tp in partitions:
+                    pos = self.consumer.position(tp)
+                    end = self.consumer.end_offsets([tp])[tp]
+                    kafka_lag.labels(topic=tp.topic, partition=tp.partition).set(end - pos)
+
         except KafkaError as e:
             log.error(f"Kafka error: {e}")
         finally:

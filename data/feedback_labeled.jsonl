@@ -1,0 +1,2 @@
+{"image": "notepad.exe", "cmdline": "notepad.exe", "rule_id": "T1059", "is_fp": true}
+{"image": "cmd.exe", "cmdline": "cmd.exe /c echo hello", "rule_id": "T1059", "is_fp": false}

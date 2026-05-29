@@ -1,0 +1,12 @@
+stages:
+  train_fp_classifier:
+    cmd: python3 -m core.active_learning --train
+    deps:
+      - core/active_learning.py
+      - data/feedback_labeled.jsonl
+    outs:
+      - models/fp_classifier.pkl
+      - models/tfidf_vectorizer.pkl
+    metrics:
+      - models/fp_metrics.json:
+          cache: false

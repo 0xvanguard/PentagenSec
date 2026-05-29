@@ -53,3 +53,44 @@ class FPLearner:
             return float(prob)
         except: # Modelo no entrenado aún
             return 0.0
+
+import argparse
+import json
+from sklearn.metrics import precision_recall_fscore_support
+
+def train_cli():
+    """DVC stage: entrena desde feedback_labeled.jsonl y exporta métricas"""
+    learner = FPLearner()
+    X_texts, y = [], []
+
+    with open('data/feedback_labeled.jsonl') as f:
+        for line in f:
+            event = json.loads(line)
+            X_texts.append(learner._extract_features(event))
+            y.append(0 if event['is_fp'] else 1)
+
+    X = learner.vectorizer.fit_transform(X_texts)
+    learner.clf.fit(X, y)
+
+    # Exporta métricas para DVC
+    y_pred = learner.clf.predict(X)
+    p, r, f1, _ = precision_recall_fscore_support(y, y_pred, average='binary')
+
+    metrics = {
+        "precision": float(p),
+        "recall": float(r),
+        "f1": float(f1),
+        "samples": len(y)
+    }
+
+    joblib.dump(learner.clf, learner.model_path)
+    joblib.dump(learner.vectorizer, learner.vec_path)
+    Path('models/fp_metrics.json').write_text(json.dumps(metrics, indent=2))
+    print(f"[DVC] Model trained: F1={f1:.3f}")
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--train', action='store_true')
+    args = parser.parse_args()
+    if args.train:
+        train_cli()
