@@ -53,6 +53,31 @@ class SigmaDuckDB:
         sql += f" AND timestamp >= current_timestamp - INTERVAL {interval_val}"
         return self.con.execute(sql).fetchall()
 
+    def get_recent_hits(self, limit=500) -> list[dict]:
+        """v4.0: Para TUI. Retorna últimos hits con metadata completa"""
+        query = f"""
+            SELECT
+                event_id, ts, host, severity, rule_id, image, cmdline,
+                user, process_guid, parent_process_guid
+            FROM hits
+            ORDER BY ts DESC
+            LIMIT {limit}
+        """
+        try:
+            return self.con.execute(query).fetchdf().to_dict('records')
+        except duckdb.CatalogException:
+            # Table doesn't exist in dummy db, return empty
+            return []
+
+    def get_event_by_id(self, event_id: str) -> dict | None:
+        """v4.0: Drill-down por event_id"""
+        query = "SELECT * FROM events WHERE event_id =? LIMIT 1"
+        try:
+            df = self.con.execute(query, [event_id]).fetchdf()
+            return df.to_dict('records')[0] if not df.empty else None
+        except duckdb.CatalogException:
+            return None
+
 if __name__ == "__main__":
     import sys
     engine = SigmaDuckDB()

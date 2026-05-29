@@ -262,6 +262,8 @@ if __name__ == "__main__":
                         help='v3.4: Consume Kafka topic siem_raw en lugar de archivo')
     parser.add_argument('--fp-threshold', type=float, default=0.8,
                         help='v3.3: Descarta eventos si P(FP) > threshold')
+    parser.add_argument('--tui', action='store_true',
+                        help='v4.0: Lanza Sentinel TUI interactivo')
     args = parser.parse_args()
     
     orch = BlueTeamOrchestratorV3()
@@ -278,6 +280,13 @@ if __name__ == "__main__":
             if batch_result['hits']:
                 log.warning(f"ALERTA: {batch_result['hits']}")
         sys.exit(0)
+
+    if args.tui:
+        from ui.sentinel_tui import SentinelTUI
+        app = SentinelTUI()
+        app.run()
+        sys.exit(0)
+
     print(f"[*] Antigravity 3.0 - Run {args.run_id}")
     hashes = orch.ingest(args.input)
     print(f"[+] Ingested. DB hash: {hashes['db_hash'][:12]}")
