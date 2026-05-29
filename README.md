@@ -1,4 +1,4 @@
-# VANGUARD-X · Blue Team Multi-Agent SecOps Platform
+# PentaGenSec · Blue Team Multi-Agent SecOps Platform
 
 > **Strictly defensive.** Multi-agent pipeline that ingests SIEM/EDR data
 > **we already own**, correlates it, prioritises alerts, produces an
