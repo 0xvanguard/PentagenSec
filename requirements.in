@@ -1,0 +1,9 @@
+autogen-core==0.4.7
+pydantic>=2.10.0
+httpx==0.27.2
+openai==1.51.2
+sarif-om==1.0.4
+duckdb
+pyyaml
+tiktoken
+prometheus_client
