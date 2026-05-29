@@ -181,6 +181,7 @@ try:
     
             self.prog_array = libbpf.bpf_object__find_map_by_name(self.main_obj, b"prog_array")
             self.next_rule_idx = libbpf.bpf_object__find_map_by_name(self.main_obj, b"next_rule_idx")
+            self.stats_map = libbpf.bpf_object__find_map_by_name(self.main_obj, b"stats_map")
     
         def _ifindex(self):
             import socket, fcntl, struct

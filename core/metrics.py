@@ -72,6 +72,48 @@ tui_drill_down_duration = Histogram(
     'Time to load drill-down view'
 )
 
+# --- v4.4.4 eBPF Telemetry ---
+import threading
+ebpf_packets_total = Counter('antigravity_ebpf_packets_total', 'Total packets seen by XDP')
+ebpf_regex_hits = Counter('antigravity_ebpf_regex_hits_total', 'Regex hits', ['rule_id'])
+ebpf_consensus_drops = Counter('antigravity_ebpf_consensus_drops_total', 'Drops by SOCK_OPS')
+ebpf_tail_call_fails = Gauge('antigravity_ebpf_tail_call_fails', 'Tail call misses')
+ebpf_insn_per_pkt = Gauge('antigravity_ebpf_insn_per_pkt', 'Insn per packet from profile')
+
+class EbpfMetricsThread(threading.Thread):
+    def __init__(self, stats_map, interval=5):
+        super().__init__(daemon=True)
+        self.stats_map = stats_map # libbpf map fd or bcc table
+        self.interval = interval
+
+    def run(self):
+        import ctypes as ct
+        from bpf import libbpf
+        # The map is BPF_MAP_TYPE_PERCPU_ARRAY. We read keys 0 to 3.
+        # We need to read num_cpus values for each key.
+        import multiprocessing
+        cpus = multiprocessing.cpu_count()
+        value_type = ct.c_uint64 * cpus
+        
+        while True:
+            try:
+                # 0=packets, 1=hits, 2=drops, 3=tail_fail
+                for k, metric in [(0, ebpf_packets_total), (1, ebpf_regex_hits.labels(rule_id="all")), 
+                                  (2, ebpf_consensus_drops), (3, ebpf_tail_call_fails)]:
+                    key = ct.c_uint32(k)
+                    val = value_type()
+                    ret = libbpf.bpf_map__lookup_elem(self.stats_map, ct.byref(key), ct.sizeof(key), ct.byref(val), ct.sizeof(val), 0)
+                    if ret == 0:
+                        total = sum(val)
+                        if isinstance(metric, Gauge):
+                            metric.set(total)
+                        else:
+                            # Counter needs to increase, but total is absolute. Wait, prometheus client Counter cannot be set directly unless using ._value.set()
+                            metric._value.set(total)
+            except Exception as e:
+                pass
+            time.sleep(self.interval)
+
 # FastAPI para /metrics
 metrics_app = FastAPI(title="Antigravity Metrics")
 
