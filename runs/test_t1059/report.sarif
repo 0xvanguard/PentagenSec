@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Antigravity",
+          "version": "2.0",
+          "informationUri": "https://pentagensec.local",
+          "rules": [
+            {
+              "id": "NIST-SI-4",
+              "name": "Command and Scripting Interpreter",
+              "shortDescription": {
+                "text": "Detects T1059.001 PowerShell execution downloading external payload."
+              },
+              "properties": {
+                "nist": "SI-4",
+                "cvss": 9.8
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "NIST-SI-4",
+          "level": "error",
+          "message": {
+            "text": "T1059: Malicious PowerShell execution detected (Base64 WebClient Download) connecting to 192.168.1.100:8080"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "samples/siem_events.json"
+                },
+                "region": {
+                  "startLine": 2
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

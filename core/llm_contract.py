@@ -65,4 +65,11 @@ def select_for_llm(all_hits: dict, max_events: int = 20, max_bytes: int = 8192) 
         result['events'].append(ev)
         current_bytes += ev_bytes
     
+    if result['events']:
+        highest_sev = result['events'][0].get('_rule_level', 'low')
+        result['summary']['severity'] = highest_sev
+        result['summary']['ioc_hit'] = True
+        result['summary']['sigma_level'] = highest_sev
+        result['summary']['sigma_confidence'] = 0.99
+    
     return result

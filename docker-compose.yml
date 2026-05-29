@@ -30,7 +30,7 @@ services:
     restart: unless-stopped
     ports:
       # Exposed for host-side debugging only. Remove in hardened deployments.
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - ollama_models:/root/.ollama
     networks:
@@ -39,27 +39,17 @@ services:
       OLLAMA_HOST: "0.0.0.0"
       OLLAMA_KEEP_ALIVE: "24h"
       OLLAMA_NUM_PARALLEL: "2"
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        set -eu
-        echo "[ollama-bootstrap] starting daemon..."
-        /bin/ollama serve &
-        SERVE_PID=$$!
-        echo "[ollama-bootstrap] waiting for daemon socket..."
-        until /bin/ollama list >/dev/null 2>&1; do
-          sleep 2
-        done
-        echo "[ollama-bootstrap] daemon ready."
-        if /bin/ollama list | grep -q "qwen2.5-coder:7b"; then
-          echo "[ollama-bootstrap] qwen2.5-coder:7b already cached — skipping pull."
-        else
-          echo "[ollama-bootstrap] pulling qwen2.5-coder:7b (~4.7 GB, one-time)..."
-          /bin/ollama pull qwen2.5-coder:7b
-          echo "[ollama-bootstrap] pull complete."
-        fi
-        echo "[ollama-bootstrap] handing over to ollama serve (foreground)..."
-        wait $$SERVE_PID
+    # AC-17: Sin pull automático. Falla si no hay modelo local.
+    entrypoint: >
+      sh -c "ollama serve &
+      sleep 2 &&
+      if ! ollama list | grep -q $${OLLAMA_MODEL:-qwen2.5-coder:7b}; then
+        echo 'ERROR AC-17: Modelo no encontrado. Modo air-gap requiere pre-carga.' >&2;
+        echo 'Ejecuta en máquina con internet: ollama pull $${OLLAMA_MODEL:-qwen2.5-coder:7b}' >&2;
+        echo 'Luego: docker save ollama/ollama | gzip > ollama.tar.gz' >&2;
+        exit 1;
+      fi;
+      tail -f /dev/null"
     healthcheck:
       test: ["CMD-SHELL", "ollama list 2>/dev/null | grep -q 'qwen2.5-coder:7b' || exit 1"]
       interval: 15s

@@ -1,0 +1,19 @@
+name: NIST SI-2 Flaw Remediation
+on: [push, pull_request]
+jobs:
+  osv-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run OSV Scanner
+        uses: google/osv-scanner-action@v1
+        with:
+          scan-args: |-
+            -r
+            --format=sarif
+            --output=osv.sarif
+            ./
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: osv.sarif

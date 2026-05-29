@@ -1,0 +1,6 @@
+{"ts": "2026-05-29T13:00:20.835123+00:00", "action": "ingest_complete", "input_hash": "43df09c2482c009b63513e6c8393d00d805f9b0fa40d5b3ea8e410c4139fe87b", "db_state_hash": "7be4204aac9d7bac6ca276b491e63f6971769070dedfca42346ef624e612f860", "event_count": 4, "duration_ms": 4}
+{"ts": "2026-05-29T13:00:20.838305+00:00", "action": "sigma_hit", "rule_id": "1111-2222-3333-4444", "rule_title": "Suspicious PowerShell Download", "sql_hash": "afdead97e814bbd7", "result_count": 1}
+{"ts": "2026-05-29T13:00:20.838471+00:00", "action": "pre_filter_complete", "total_rules": 1, "rules_hit": 1, "raw_hits": 1, "llm_events": 1, "prompt_bytes": 1268, "tokens_saved": 0, "hunt_duration_ms": 3}
+{"ts": "2026-05-29T13:00:20.838578+00:00", "action": "llm_prompt", "prompt_hash": "9b0a277ae4cfebc6ba031a915877840fdb573aac70fb492169bec8e2bb91ebef", "event_count": 1}
+{"ts": "2026-05-29T13:00:20.838622+00:00", "action": "llm_triage_complete", "prompt_hash": "9b0a277ae4cfebc6ba031a915877840fdb573aac70fb492169bec8e2bb91ebef", "verdict": "critical", "duration_ms": 0}
+{"ts": "2026-05-29T13:00:20.838909+00:00", "action": "artifact_signed", "file": "report.sarif", "sha256": "1c08c786d4ee428b5c811d1586374b2ab38eda3c7a9e57882a0b829afb324dfa"}

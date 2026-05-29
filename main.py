@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, ValidationError
 from core.sigma_compiler import SigmaDuckDB
 from core.llm_contract import select_for_llm, estimate_tokens
 from core.custody import CustodyLogger
+from core.consensus import AsymmetricConsensus, TriagePath
 
 # Observability
 from prometheus_client import Counter, Histogram, Gauge, start_http_server
@@ -28,6 +29,8 @@ LLM_TOKENS_SAVED = Counter('antigravity_llm_tokens_saved_total', 'Tokens saved b
 LLM_PROMPT_SIZE = Histogram('antigravity_llm_prompt_bytes', 'Size of prompts sent to LLM', buckets=[1024, 4096, 8192, 16384])
 HUNT_DURATION = Histogram('antigravity_hunt_duration_seconds', 'SQL hunt duration', buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 1.0])
 EVENTS_IN_DB = Gauge('antigravity_events_in_db', 'Current events in DuckDB')
+CONSENSUS_PATH_TOTAL = Counter('antigravity_consensus_path_total', 'Path taken', ['path'])
+CONSENSUS_SKIP_CLAUDE_TOTAL = Counter('antigravity_claude_skipped_total', 'Claude skipped by fast-path')
 
 # --- Pydantic SI-10: Validación estricta de entrada ---
 class SIEMEvent(BaseModel):
@@ -38,6 +41,14 @@ class SIEMEvent(BaseModel):
     
     class Config:
         extra = 'forbid'
+
+class MockLLM:
+    def __init__(self, name):
+        self.name = name
+    def analyze(self, payload):
+        summary = payload.get('summary', {})
+        sev = summary.get('severity', 'low')
+        return {"verdict": sev, "severity": sev, "findings": payload.get('events', [])[:1], "reasoning": f"Detected by {self.name}"}
 
 class BlueTeamOrchestratorV3:
     def __init__(self, 
@@ -57,6 +68,11 @@ class BlueTeamOrchestratorV3:
         # Start Prometheus endpoint para SOC dashboards
         start_http_server(prometheus_port)
         self._load_sigma_rules()
+        
+        # Init Consensus
+        self.gemini = MockLLM("Gemini 3.1 Pro")
+        self.claude = MockLLM("Claude Opus 4.7")
+        self.consensus = AsymmetricConsensus(self.gemini, self.claude, self.custody)
     
     def _load_sigma_rules(self):
         """Carga todas las reglas Sigma .yml y valida sintaxis"""
@@ -191,24 +207,24 @@ class BlueTeamOrchestratorV3:
     
     def triage_llm(self, llm_payload: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Fase 3: LLM solo hace reasoning. Ya no filtra.
-        Consenso Asimétrico se añade en v3.1
+        Fase 3: Consenso Asimétrico (Fast-Path / Slow-Path)
         """
         if not llm_payload.get('events'):
-            return {"verdict": "benign", "findings": []}
+            return {"verdict": "benign", "severity": "low", "findings": []}
         
-        # Hash de prompt para custodia
-        prompt_hash = hashlib.sha256(json.dumps(llm_payload, sort_keys=True).encode()).hexdigest()
-        self.custody.log("llm_prompt", prompt_hash=prompt_hash, event_count=len(llm_payload['events']))
-        
-        # Placeholder para v3.1 Consenso Asimétrico
         start = time.time()
-        verdict = {"verdict": "critical", "findings": llm_payload['events'][:1], "reasoning": "T1059 detected"} # stub
+        verdict = self.consensus.triage(llm_payload)
         
+        # Metrics
+        path_taken = verdict.get('consensus_path', 'manual')
+        CONSENSUS_PATH_TOTAL.labels(path=path_taken).inc()
+        if verdict.get('claude_skipped'):
+            CONSENSUS_SKIP_CLAUDE_TOTAL.inc()
+            
         self.custody.log("llm_triage_complete",
-            prompt_hash=prompt_hash,
-            verdict=verdict['verdict'],
-            duration_ms=int((time.time()-start)*1000)
+            verdict=verdict.get('verdict', verdict.get('severity')),
+            duration_ms=int((time.time()-start)*1000),
+            path=path_taken
         )
         
         return verdict
