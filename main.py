@@ -266,6 +266,8 @@ if __name__ == "__main__":
                         help='v4.0: Lanza Sentinel TUI interactivo')
     parser.add_argument('--xdp', action='store_true',
                         help='v4.2: Activa XDP pre-filter en interfaz')
+    parser.add_argument('--reload-rules', action='store_true',
+                        help='v4.3: Hot-reload reglas Sigma sin reiniciar XDP')
     parser.add_argument('--iface', default='eth0',
                         help='Interfaz para XDP')
     parser.add_argument('--metrics-port', type=int, default=9091,
@@ -275,17 +277,27 @@ if __name__ == "__main__":
     orch = BlueTeamOrchestratorV3()
     
     if args.xdp:
-        from core.ebpf_loader import SigmaXDP
+        from core.ebpf_loader import SigmaXDPv43
         from pathlib import Path
         import sys
         import logging
         log = logging.getLogger("main")
-        xdp = SigmaXDP(iface=args.iface)
-        # Carga todas las reglas Sigma
+        xdp = SigmaXDPv43(args.iface)
+
         all_rules = []
         for sigma_file in Path('rules/').glob('*.yml'):
             all_rules.extend(orch.sigma_compiler.compile_to_ebpf(sigma_file))
-        xdp.load_sigma_rules(all_rules)
+
+        if args.reload_rules:
+            log.info("v4.3: Hot-reload iniciado")
+            epoch = xdp.hot_reload_rules(all_rules)
+            log.info(f"Hot-reload OK. Epoch={epoch}. {len(all_rules)} reglas activas.")
+            sys.exit(0)
+
+        if not xdp.attached:
+            xdp.attach() # Solo primera vez
+
+        xdp.hot_reload_rules(all_rules)
         log.info(f"XDP activo en {args.iface} con {len(all_rules)} reglas")
         
         try:

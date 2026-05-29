@@ -13,8 +13,10 @@
 struct sigma_rule {
     __u32 rule_id;
     __u16 dst_port; // 0 = any
+    __u8 l4_proto;
     __u8 pattern_len;
     __u8 pattern[MAX_PATTERN_LEN]; // ej: "mimikatz", "powershell -enc"
+    __u64 epoch; // v4.3: para hot-reload sin race
 };
 
 struct {
@@ -22,7 +24,17 @@ struct {
     __uint(max_entries, MAX_RULES);
     __type(key, __u32);
     __type(value, struct sigma_rule);
+    __uint(pinning, LIBBPF_PIN_BY_NAME); // Clave v4.3
 } rules_map SEC(".maps");
+
+// v4.3: Mapa de control para hot-reload
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, __u64); // current_epoch
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
+} control_map SEC(".maps");
 
 // Ringbuf para pasar hits a userspace
 struct {
@@ -42,6 +54,10 @@ struct event_hit {
 
 SEC("xdp")
 int sigma_xdp_filter(struct xdp_md *ctx) {
+    __u32 zero = 0;
+    __u64 *epoch_ptr = bpf_map_lookup_elem(&control_map, &zero);
+    __u64 current_epoch = epoch_ptr ? *epoch_ptr : 0;
+
     void *data_end = (void *)(long)ctx->data_end;
     void *data = (void *)(long)ctx->data;
 
@@ -74,6 +90,10 @@ int sigma_xdp_filter(struct xdp_md *ctx) {
         struct sigma_rule *rule = bpf_map_lookup_elem(&rules_map, &i);
         if (!rule || rule->rule_id == 0)
             break; // Fin de reglas
+
+        // v4.3: Solo aplica reglas de epoch actual
+        if (rule->epoch != 0 && rule->epoch != current_epoch)
+            continue;
 
         // Filtro L4: puerto
         if (rule->dst_port != 0 && rule->dst_port != bpf_ntohs(tcp->dest))

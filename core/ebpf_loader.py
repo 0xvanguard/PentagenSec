@@ -59,3 +59,83 @@ class SigmaXDP:
 
     def detach(self):
         self.bpf.remove_xdp(self.iface, 0)
+
+import time
+from pathlib import Path
+import os
+
+BPF_FS = "/sys/fs/bpf"
+import ctypes as ct
+
+class SigmaXDPv43(SigmaXDP): # Hereda de v4.2
+
+    def __init__(self, iface: str, pin_path="/sys/fs/bpf/sigma"):
+        self.iface = iface
+        self.pin_path = Path(pin_path)
+        self.pin_path.mkdir(parents=True, exist_ok=True)
+
+        # v4.3: Intenta reusar mapas pineados, si no existen carga programa
+        if self._maps_pinned():
+            self.bpf = BPF(text="", reuse_maps=True) # Solo abre mapas
+            self.rules_map = self.bpf.get_table("rules_map", str(self.pin_path / "rules_map"))
+            self.control_map = self.bpf.get_table("control_map", str(self.pin_path / "control_map"))
+            self.attached = self._is_xdp_attached()
+        else:
+            super().__init__(iface, "ebpf/sigma_filter.c")
+            # v4.3: Pinea mapas tras cargar
+            self.bpf["rules_map"].pin(str(self.pin_path / "rules_map"))
+            self.bpf["control_map"].pin(str(self.pin_path / "control_map"))
+            self.attached = True
+
+    def _maps_pinned(self) -> bool:
+        return (self.pin_path / "rules_map").exists()
+
+    def _is_xdp_attached(self) -> bool:
+        import subprocess
+        try:
+            out = subprocess.check_output(["bpftool", "net", "show", "dev", self.iface])
+            return b"xdp" in out
+        except FileNotFoundError:
+            return False
+
+    def hot_reload_rules(self, ebpf_rules: list[dict]):
+        """v4.3: Actualiza reglas sin detach. NIST CM-3"""
+        # 1. Incrementa epoch para invalida reglas viejas
+        zero = ct.c_uint32(0)
+        old_epoch = self.control_map[zero].value if zero in self.control_map else 0
+        new_epoch = old_epoch + 1
+        self.control_map[zero] = ct.c_uint64(new_epoch)
+
+        # 2. Carga nuevas reglas con nuevo epoch
+        for r in ebpf_rules:
+            self.load_rule(r.get('idx', r.get('id', 0) % 1024), r.get('dst_port', 0), r.get('l4_proto', 6),
+                           r.get('pattern', ''), r.get('id', 0), new_epoch)
+
+        # 3. Limpia reglas con epoch viejo - no bloquea XDP
+        for i in range(1024):
+            key = ct.c_uint32(i)
+            try:
+                rule = self.rules_map[key]
+                if rule.epoch < new_epoch and rule.epoch != 0:
+                    del self.rules_map[key]
+            except KeyError:
+                pass
+
+        return new_epoch
+
+    def load_rule(self, idx: int, dst_port: int, l4_proto: int,
+                  substr: str, rule_id: int, epoch: int = 0):
+        substr_bytes = substr.encode('utf-8')[:63]
+        rule = self.rules_map.Leaf()
+        rule.dst_port = dst_port
+        rule.l4_proto = l4_proto
+        rule.pattern_len = len(substr_bytes)
+        rule.pattern = (ct.c_uint8 * 64)(*substr_bytes)
+        rule.rule_id = rule_id
+        rule.epoch = epoch # v4.3
+        self.rules_map[ct.c_uint32(idx)] = rule
+
+    def attach(self):
+        self.fn = self.bpf.load_func("sigma_xdp_filter", BPF.XDP)
+        self.bpf.attach_xdp(self.iface, self.fn, 0)
+        self.attached = True

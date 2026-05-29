@@ -204,11 +204,14 @@ services:
     cap_add:
       - NET_ADMIN
       - SYS_ADMIN
+      - BPF
     volumes:
       - ./rules:/app/rules
       - ./ebpf:/app/ebpf
       - /sys/fs/bpf:/sys/fs/bpf
-    command: python main.py --xdp --iface eth0
+      - /lib/modules:/lib/modules:ro
+    command: python3 main.py --xdp --iface eth0
+    restart: unless-stopped
 
   # --- Día 4: Observabilidad ---
   prometheus:
