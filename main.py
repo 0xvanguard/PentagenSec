@@ -296,6 +296,7 @@ if __name__ == "__main__":
 
         if not xdp.attached:
             xdp.attach() # Solo primera vez
+            xdp.attach_consensus() # v4.4.2
 
         xdp.hot_reload_rules(all_rules)
         log.info(f"XDP activo en {args.iface} con {len(all_rules)} reglas")

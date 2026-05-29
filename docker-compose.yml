@@ -194,6 +194,18 @@ services:
     networks:
       - blueteam-net
 
+  ebpf-builder:
+    build:
+      context: .
+      dockerfile: Dockerfile.builder
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE]
+    network_mode: "none"
+    volumes:
+      - ebpf_artifacts:/out
+    security_opt:
+      - no-new-privileges:true
+
   xdp-filter:
     build:
       context: .
@@ -210,6 +222,7 @@ services:
       - ./ebpf:/app/ebpf
       - /sys/fs/bpf:/sys/fs/bpf
       - /lib/modules:/lib/modules:ro
+      - ebpf_artifacts:/out:ro
     command: python3 main.py --xdp --iface eth0
     restart: unless-stopped
 
