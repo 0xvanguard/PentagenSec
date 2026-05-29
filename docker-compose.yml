@@ -1,0 +1,129 @@
+# =============================================================================
+#  VANGUARD-X Blue Team — Defensive multi-agent SecOps stack
+#  -----------------------------------------------------------------------------
+#  Two services on an isolated bridge network.
+#
+#    1. ollama-service   -> hosts qwen2.5-coder:7b locally, auto-pulls on
+#                           first boot, exposes the OpenAI-compatible /v1
+#                           endpoint. Healthcheck only flips green when the
+#                           model is loaded.
+#    2. blueteam-agents  -> runs the 5 defensive agents + HumanApprovalAgent
+#                           gate. Starts only when ollama-service is healthy.
+#                           Reads SIEM/EDR data we already own — never reaches
+#                           out to a third-party target.
+#
+#  Single-command bring-up:  docker compose up --build
+#
+#  Hard policy: no external network targeting without written authorization.
+# =============================================================================
+
+name: vanguard-x-blueteam
+
+services:
+  # ---------------------------------------------------------------------------
+  # 1) Local LLM runtime
+  # ---------------------------------------------------------------------------
+  ollama-service:
+    image: ollama/ollama:latest
+    container_name: vanguard-ollama
+    hostname: ollama-service
+    restart: unless-stopped
+    ports:
+      # Exposed for host-side debugging only. Remove in hardened deployments.
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - blueteam-net
+    environment:
+      OLLAMA_HOST: "0.0.0.0"
+      OLLAMA_KEEP_ALIVE: "24h"
+      OLLAMA_NUM_PARALLEL: "2"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        echo "[ollama-bootstrap] starting daemon..."
+        /bin/ollama serve &
+        SERVE_PID=$$!
+        echo "[ollama-bootstrap] waiting for daemon socket..."
+        until /bin/ollama list >/dev/null 2>&1; do
+          sleep 2
+        done
+        echo "[ollama-bootstrap] daemon ready."
+        if /bin/ollama list | grep -q "qwen2.5-coder:7b"; then
+          echo "[ollama-bootstrap] qwen2.5-coder:7b already cached — skipping pull."
+        else
+          echo "[ollama-bootstrap] pulling qwen2.5-coder:7b (~4.7 GB, one-time)..."
+          /bin/ollama pull qwen2.5-coder:7b
+          echo "[ollama-bootstrap] pull complete."
+        fi
+        echo "[ollama-bootstrap] handing over to ollama serve (foreground)..."
+        wait $$SERVE_PID
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list 2>/dev/null | grep -q 'qwen2.5-coder:7b' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 60          # 60 * 15s = up to 15 min grace for first-time pull
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # 2) Blue Team multi-agent pipeline + Human approval gate
+  # ---------------------------------------------------------------------------
+  blueteam-agents:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vanguard-x/blueteam-agents:latest
+    container_name: vanguard-blueteam
+    hostname: blueteam-agents
+    depends_on:
+      ollama-service:
+        condition: service_healthy
+    networks:
+      - blueteam-net
+    environment:
+      OLLAMA_BASE_URL: "http://ollama-service:11434/v1"
+      OLLAMA_MODEL: "qwen2.5-coder:7b"
+      OLLAMA_API_KEY: "ollama-local-noop"
+      LOG_LEVEL: "INFO"
+      MAX_AGENT_TURNS: "18"
+      REQUEST_TIMEOUT_S: "240"
+      SIEM_EVENTS_PATH: "/home/secops/app/sample_data/siem_events.json"
+      # Mandatory human approval gate — see main.py for policy enforcement.
+      HUMAN_APPROVAL_MODE: "${HUMAN_APPROVAL_MODE:-interactive}"
+      HUMAN_APPROVAL_TIMEOUT_S: "${HUMAN_APPROVAL_TIMEOUT_S:-600}"
+      # Notification channels (post-approval only). Empty = disabled.
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      TELEGRAM_CHAT_ID:   "${TELEGRAM_CHAT_ID:-}"
+      DISCORD_WEBHOOK_URL: "${DISCORD_WEBHOOK_URL:-}"
+    volumes:
+      # SIEM events we already own (read-only — defensive posture).
+      - ./sample_data:/home/secops/app/sample_data:ro
+      # Persisted reports written by the ComplianceAgent.
+      - ./reports:/home/secops/app/reports
+    # stdin_open + tty are required so the HumanApprovalAgent can read
+    # operator decisions from the attached terminal.
+    stdin_open: true
+    tty: true
+    # Hardening — runs the workload with reduced kernel privileges.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    restart: "no"
+
+# -----------------------------------------------------------------------------
+# Network / Volumes
+# -----------------------------------------------------------------------------
+networks:
+  blueteam-net:
+    driver: bridge
+    name: vanguard-blueteam-net
+
+volumes:
+  ollama_models:
+    name: vanguard-ollama-models
+    # Named volume keeps the ~4.7 GB model across rebuilds — pulled only once.
