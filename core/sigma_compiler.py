@@ -99,6 +99,24 @@ class SigmaDuckDB:
         except duckdb.CatalogException:
             return None
 
+    def compile_to_ebpf(self, sigma_yaml_path: str) -> list[dict]:
+        """v4.2: Sigma → struct sigma_rule. Solo soporta selection con 'contains'."""
+        import yaml
+        with open(sigma_yaml_path) as f:
+            rule = yaml.safe_load(f)
+
+        ebpf_rules = []
+        rule_id = hash(rule['id']) & 0xFFFFFFFF # 32-bit ID
+
+        for sel in rule.get('detection', {}).get('selection', []):
+            if 'contains' in sel:
+                ebpf_rules.append({
+                    'id': rule_id,
+                    'dst_port': rule.get('port', 0),
+                    'pattern': sel['contains']
+                })
+        return ebpf_rules
+
 if __name__ == "__main__":
     import sys
     engine = SigmaDuckDB()

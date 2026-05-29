@@ -264,12 +264,37 @@ if __name__ == "__main__":
                         help='v3.3: Descarta eventos si P(FP) > threshold')
     parser.add_argument('--tui', action='store_true',
                         help='v4.0: Lanza Sentinel TUI interactivo')
+    parser.add_argument('--xdp', action='store_true',
+                        help='v4.2: Activa XDP pre-filter en interfaz')
+    parser.add_argument('--iface', default='eth0',
+                        help='Interfaz para XDP')
     parser.add_argument('--metrics-port', type=int, default=9091,
                         help='Puerto para Prometheus /metrics')
     args = parser.parse_args()
     
     orch = BlueTeamOrchestratorV3()
     
+    if args.xdp:
+        from core.ebpf_loader import SigmaXDP
+        from pathlib import Path
+        import sys
+        import logging
+        log = logging.getLogger("main")
+        xdp = SigmaXDP(iface=args.iface)
+        # Carga todas las reglas Sigma
+        all_rules = []
+        for sigma_file in Path('rules/').glob('*.yml'):
+            all_rules.extend(orch.sigma_compiler.compile_to_ebpf(sigma_file))
+        xdp.load_sigma_rules(all_rules)
+        log.info(f"XDP activo en {args.iface} con {len(all_rules)} reglas")
+        
+        try:
+            while True:
+                xdp.poll() # Bloquea hasta eventos
+        except KeyboardInterrupt:
+            xdp.detach()
+        sys.exit(0)
+
     if args.stream or args.tui:
         import uvicorn
         from core.metrics import metrics_app

@@ -194,6 +194,22 @@ services:
     networks:
       - blueteam-net
 
+  xdp-filter:
+    build:
+      context: .
+      dockerfile: Dockerfile.xdp
+    container_name: antigravity-xdp
+    network_mode: "host" # XDP necesita acceso a NIC host
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    volumes:
+      - ./rules:/app/rules
+      - ./ebpf:/app/ebpf
+      - /sys/fs/bpf:/sys/fs/bpf
+    command: python main.py --xdp --iface eth0
+
   # --- Día 4: Observabilidad ---
   prometheus:
     image: prom/prometheus:v2.54.1

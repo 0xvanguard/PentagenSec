@@ -1,0 +1,9 @@
+FROM python:3.12-slim-bookworm
+RUN apt-get update && apt-get install -y \
+    clang llvm libelf-dev linux-headers-generic \
+    bpftool iproute2 python3-bpfcc
+COPY requirements.txt .
+RUN sed -i 's/--require-hashes//g' requirements.txt || true
+RUN pip install -r requirements.txt
+COPY . /app
+WORKDIR /app
