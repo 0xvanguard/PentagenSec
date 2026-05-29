@@ -2,11 +2,7 @@ import joblib
 from pathlib import Path
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import SGDClassifier
-from prometheus_client import Counter, Histogram
-import numpy as np
-
-fp_predictions = Counter('antigravity_fp_predictions_total', 'FP predictions', ['label'])
-fp_train_time = Histogram('antigravity_fp_train_duration_seconds', 'FP model training time')
+from core.metrics import fp_predictions_total, fp_model_train_duration
 
 class FPLearner:
     """v3.3: Clasificador online para descartar FPs. NIST SI-10 compliant."""
@@ -35,7 +31,7 @@ class FPLearner:
         """Concatena campos relevantes para TF-IDF"""
         return f"{event.get('image','')} {event.get('cmdline','')} {event.get('rule_id','')}"
 
-    @fp_train_time.time()
+    @fp_model_train_duration.time()
     def feedback(self, event: dict, is_false_positive: bool):
         """Analista marca FP/TP → re-entrena. NIST AU-6 audit trail."""
         text = self._extract_features(event)
@@ -46,7 +42,7 @@ class FPLearner:
         # Persistir tras cada feedback para no perder aprendizaje
         joblib.dump(self.clf, self.model_path)
         joblib.dump(self.vectorizer, self.vec_path)
-        fp_predictions.labels(label='fp' if is_false_positive else 'tp').inc()
+        fp_predictions_total.labels(label='fp' if is_false_positive else 'tp').inc()
 
     def predict_fp_prob(self, event: dict) -> float:
         """Retorna P(FP). Si >0.8, el streamer lo descarta."""
