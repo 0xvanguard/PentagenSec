@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Antigravity 3.0 L4 Orchestrator
+pentagensec 3.0 L4 Orchestrator
 Architecture: DuckDB Pre-Filter + LLM Reasoning + NIST Chain-of-Custody
 NIST 800-53: AU-9, SI-10, AC-17, SC-7 compliant
 """
@@ -22,15 +22,13 @@ from core.consensus import AsymmetricConsensus, TriagePath
 # Observability
 from prometheus_client import Counter, Histogram, Gauge, start_http_server
 
-# --- Prometheus Metrics ---
-SIGMA_HITS_TOTAL = Counter('antigravity_sigma_hits_total', 'Total Sigma rule hits', ['rule_id', 'severity'])
-EVENTS_INGESTED = Counter('antigravity_events_ingested_total', 'Total events ingested to DuckDB')
-LLM_TOKENS_SAVED = Counter('antigravity_llm_tokens_saved_total', 'Tokens saved by SQL pre-filter')
-LLM_PROMPT_SIZE = Histogram('antigravity_llm_prompt_bytes', 'Size of prompts sent to LLM', buckets=[1024, 4096, 8192, 16384])
-HUNT_DURATION = Histogram('antigravity_hunt_duration_seconds', 'SQL hunt duration', buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 1.0])
-EVENTS_IN_DB = Gauge('antigravity_events_in_db', 'Current events in DuckDB')
-CONSENSUS_PATH_TOTAL = Counter('antigravity_consensus_path_total', 'Path taken', ['path'])
-CONSENSUS_SKIP_CLAUDE_TOTAL = Counter('antigravity_claude_skipped_total', 'Claude skipped by fast-path')
+from core.metrics import sigma_hits_total as SIGMA_HITS_TOTAL, events_ingested_total as EVENTS_INGESTED
+LLM_TOKENS_SAVED = Counter('pentagensec_llm_tokens_saved_total', 'Tokens saved by SQL pre-filter')
+LLM_PROMPT_SIZE = Histogram('pentagensec_llm_prompt_bytes', 'Size of prompts sent to LLM', buckets=[1024, 4096, 8192, 16384])
+HUNT_DURATION = Histogram('pentagensec_hunt_duration_seconds', 'SQL hunt duration', buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 1.0])
+EVENTS_IN_DB = Gauge('pentagensec_events_in_db', 'Current events in DuckDB')
+CONSENSUS_PATH_TOTAL = Counter('pentagensec_consensus_path_total', 'Path taken', ['path'])
+CONSENSUS_SKIP_CLAUDE_TOTAL = Counter('pentagensec_claude_skipped_total', 'Claude skipped by fast-path')
 
 # --- Pydantic SI-10: Validación estricta de entrada ---
 class SIEMEvent(BaseModel):
@@ -235,7 +233,7 @@ class BlueTeamOrchestratorV3:
             "version": "2.1.0",
             "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
             "runs": [{
-                "tool": {"driver": {"name": "Antigravity", "version": "3.0"}},
+                "tool": {"driver": {"name": "pentagensec", "version": "3.0"}},
                 "results": []
             }]
         }
@@ -272,6 +270,8 @@ if __name__ == "__main__":
                         help='Interfaz para XDP')
     parser.add_argument('--metrics-port', type=int, default=9091,
                         help='Puerto para Prometheus /metrics')
+    parser.add_argument('--af_xdp', action='store_true',
+                        help='v4.4.3: Activa modo Zero-Copy AF_XDP')
     args = parser.parse_args()
     
     orch = BlueTeamOrchestratorV3()
@@ -297,18 +297,42 @@ if __name__ == "__main__":
         if not xdp.attached:
             xdp.attach() # Solo primera vez
             xdp.attach_consensus() # v4.4.2
+            
+            # v4.4.4 Telemetry
+            try:
+                from core.ebpf_loader import SigmaJIT
+                from core.metrics import EbpfMetricsThread
+                # Hack: instanciar SigmaJIT asume que el main obj ya está cargado o lo recarga
+                jit = SigmaJIT(args.iface)
+                EbpfMetricsThread(jit.stats_map).start()
+                log.info("EbpfMetricsThread started for v4.4.4 Telemetry")
+            except Exception as e:
+                log.warning(f"Could not start EbpfMetricsThread: {e}")
 
         xdp.hot_reload_rules(all_rules)
         log.info(f"XDP activo en {args.iface} con {len(all_rules)} reglas")
         
         try:
-            while True:
-                xdp.poll() # Bloquea hasta eventos
+            from core.soar import SOARThread
+            soar = SOARThread(xdp.bpf)
+            soar.start()
+            
+            if args.af_xdp:
+                from core.af_xdp import AFXDPThread
+                afxdp = AFXDPThread(iface=args.iface, queue_id=0)
+                afxdp.start()
+                log.info("AF_XDP Thread iniciado")
+                while True:
+                    import time
+                    time.sleep(1)
+            else:
+                while True:
+                    xdp.poll() # Bloquea hasta eventos
         except KeyboardInterrupt:
             xdp.detach()
         sys.exit(0)
 
-    if args.stream or args.tui:
+    if args.stream or args.tui or args.xdp:
         import uvicorn
         from core.metrics import metrics_app
         from threading import Thread
@@ -316,6 +340,7 @@ if __name__ == "__main__":
         log = logging.getLogger("main")
 
         def run_metrics():
+            metrics_app.bpf = xdp.bpf if 'xdp' in locals() else None
             uvicorn.run(metrics_app, host="0.0.0.0", port=args.metrics_port, log_level="warning")
 
         Thread(target=run_metrics, daemon=True).start()
@@ -338,7 +363,7 @@ if __name__ == "__main__":
         app.run()
         sys.exit(0)
 
-    print(f"[*] Antigravity 3.0 - Run {args.run_id}")
+    print(f"[*] pentagensec 3.0 - Run {args.run_id}")
     hashes = orch.ingest(args.input)
     print(f"[+] Ingested. DB hash: {hashes['db_hash'][:12]}")
     

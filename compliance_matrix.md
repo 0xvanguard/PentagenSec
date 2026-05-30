@@ -1,4 +1,4 @@
-# Matriz de Cumplimiento NIST 800-53 Rev.5 (Antigravity 2.0)
+# Matriz de Cumplimiento NIST 800-53 Rev.5 (pentagensec 2.0)
 
 | NIST ID | Control Name | Estado | Evidencia | Mitigación Recomendada |
 | :--- | :--- | :--- | :--- | :--- |

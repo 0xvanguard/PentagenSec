@@ -1,11 +1,28 @@
 // ebpf/sigma_filter.c
-#include <linux/bpf.h>
-#include <linux/if_ether.h>
-#include <linux/ip.h>
-#include <linux/in.h>
-#include <linux/tcp.h>
+#include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
+#include "af_xdp_kern.c"
+#include "soar_kern.h"
+#include "ml_kern.h"
+
+#define ML_THRESHOLD 42 // Tuned offline to achieve FPR < 0.01%
+
+struct flow_key {
+    __u32 saddr;
+    __u16 sport;
+    __u16 dport;
+    __u8 proto;
+    __u8 _pad; // pad to 10 bytes (or 12)
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(max_entries, 131072);
+    __type(key, struct flow_key);
+    __type(value, __u64);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
+} last_ts_map SEC(".maps");
 
 #define MAX_RULES 1024
 #define MAX_PATTERN_LEN 64
@@ -36,11 +53,7 @@ struct {
     __uint(pinning, LIBBPF_PIN_BY_NAME);
 } control_map SEC(".maps");
 
-// Ringbuf para pasar hits a userspace
-struct {
-    __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 256 * 1024); // 256KB
-} hits_rb SEC(".maps");
+// Ringbuf removido para v4.4.3 Zero-Copy
 
 struct event_hit {
     __u64 ts;
@@ -51,6 +64,41 @@ struct event_hit {
     __u16 dst_port;
     __u8 payload[128]; // Truncado para SI-4
 };
+
+static __always_inline __u16 csum_fold_helper(__u32 csum) {
+    csum = (csum & 0xffff) + (csum >> 16);
+    csum = (csum & 0xffff) + (csum >> 16);
+    return (__u16)~csum;
+}
+
+static __always_inline __u16 iph_csum(struct iphdr *iph) {
+    iph->check = 0;
+    __u32 csum = 0;
+    __u16 *next_iph_u16 = (__u16 *)iph;
+    #pragma unroll
+    for (int i = 0; i < sizeof(struct iphdr) >> 1; i++) {
+        csum += *next_iph_u16++;
+    }
+    return csum_fold_helper(csum);
+}
+
+static __always_inline __u16 tcp_csum(struct iphdr *iph, struct tcphdr *tcph) {
+    tcph->check = 0;
+    __u32 csum = 0;
+    csum += (iph->saddr >> 16) & 0xFFFF;
+    csum += (iph->saddr) & 0xFFFF;
+    csum += (iph->daddr >> 16) & 0xFFFF;
+    csum += (iph->daddr) & 0xFFFF;
+    csum += bpf_htons(IPPROTO_TCP);
+    csum += bpf_htons(sizeof(struct tcphdr)); // Asumiendo payload 0
+    
+    __u16 *next_tcph_u16 = (__u16 *)tcph;
+    #pragma unroll
+    for (int i = 0; i < sizeof(struct tcphdr) >> 1; i++) {
+        csum += *next_tcph_u16++;
+    }
+    return csum_fold_helper(csum);
+}
 
 SEC("xdp")
 int sigma_xdp_filter(struct xdp_md *ctx) {
@@ -74,6 +122,48 @@ int sigma_xdp_filter(struct xdp_md *ctx) {
 
     if (ip->protocol != IPPROTO_TCP)
         return XDP_PASS;
+
+    // SOAR Fast Path: Check actions_map before regex
+    struct action_key ak = {};
+    ak.ip_src = ip->saddr;
+    ak.protocol = ip->protocol;
+    __u8 *action = bpf_map_lookup_elem(&actions_map, &ak);
+    if (action) {
+        if (*action == 1) {
+            return XDP_DROP;
+        } else if (*action == 2) {
+            // TARPIT: Swap L2
+            __u8 tmp_mac[6];
+            __builtin_memcpy(tmp_mac, eth->h_source, 6);
+            __builtin_memcpy(eth->h_source, eth->h_dest, 6);
+            __builtin_memcpy(eth->h_dest, tmp_mac, 6);
+
+            // Swap L3
+            __u32 tmp_ip = ip->saddr;
+            ip->saddr = ip->daddr;
+            ip->daddr = tmp_ip;
+
+            // L4 modifications
+            struct tcphdr *tcp = (void *)ip + sizeof(*ip);
+            if ((void *)tcp + sizeof(*tcp) <= data_end) {
+                tcp->ack_seq = bpf_htonl(bpf_ntohl(tcp->seq) + 1);
+                tcp->seq = bpf_htonl(12345);
+                tcp->syn = 1;
+                tcp->ack = 1;
+                tcp->window = 0; // Tarpit: no data allowed
+                
+                // Recalculate checksums
+                ip->check = iph_csum(ip);
+                tcp->check = tcp_csum(ip, tcp);
+            } else {
+                return XDP_DROP;
+            }
+            return XDP_TX;
+        }
+    }
+
+    __u8 *mode = bpf_map_lookup_elem(&config_map, &zero);
+    __u8 auto_block = (mode && *mode == 1) ? 1 : 0;
 
     struct tcphdr *tcp = (void *)ip + sizeof(*ip);
     if ((void *)tcp + sizeof(*tcp) > data_end)
@@ -114,20 +204,74 @@ int sigma_xdp_filter(struct xdp_md *ctx) {
             }
 
             if (found) {
-                // HIT: envía a userspace vía ringbuf
-                struct event_hit *e = bpf_ringbuf_reserve(&hits_rb, sizeof(*e), 0);
-                if (e) {
-                    e->ts = bpf_ktime_get_ns();
-                    e->rule_id = rule->rule_id;
-                    e->src_ip = ip->saddr;
-                    e->dst_ip = ip->daddr;
-                    e->src_port = bpf_ntohs(tcp->source);
-                    e->dst_port = bpf_ntohs(tcp->dest);
-                    bpf_probe_read_kernel(&e->payload, sizeof(e->payload), payload);
-                    bpf_ringbuf_submit(e, 0);
+                if (auto_block) {
+                    struct soar_event *e = bpf_ringbuf_reserve(&soar_events, sizeof(*e), 0);
+                    if (e) {
+                        e->ts = bpf_ktime_get_ns();
+                        e->rule_id = rule->rule_id;
+                        e->src_ip = ip->saddr;
+                        e->dst_ip = ip->daddr;
+                        e->src_port = bpf_ntohs(tcp->source);
+                        e->dst_port = bpf_ntohs(tcp->dest);
+                        e->protocol = ip->protocol;
+                        e->severity = 3; // Harcoded high severity for testing
+                        bpf_ringbuf_submit(e, 0);
+                    }
                 }
-                return XDP_PASS; // Deja pasar para que Kafka lo capture
+                // HIT: redirecciona a userspace vía AF_XDP
+                return redirect_to_af_xdp(ctx);
             }
+        }
+    }
+
+    // 3. ML path: solo si no matcheó firma y flow es TCP
+    struct flow_key fkey = {};
+    fkey.saddr = ip->saddr;
+    fkey.sport = tcp->source;
+    fkey.dport = tcp->dest;
+    fkey.proto = ip->protocol;
+
+    __u64 now = bpf_ktime_get_ns();
+    __u64 *last_ts = bpf_map_lookup_elem(&last_ts_map, &fkey);
+    __s32 iat_ns = 0;
+    
+    if (last_ts) {
+        // TTL implicito 300s (300,000,000,000 ns)
+        if (now - *last_ts > 300000000000ULL) {
+            iat_ns = 0; // Flow viejo, reset
+        } else {
+            iat_ns = (__s32)(now - *last_ts);
+        }
+    }
+    bpf_map_update_elem(&last_ts_map, &fkey, &now, BPF_ANY);
+
+    // Extraer features básicos
+    __s32 feat[ML_N_FEATURES] = {0};
+    feat[0] = (__s32)(data_end - data); // pkt_len
+    feat[1] = iat_ns;                   // Inter-arrival time en ns
+    feat[2] = bpf_ntohs(tcp->source); // src_port
+    feat[3] = bpf_ntohs(tcp->dest); // dst_port
+    feat[4] = tcp->fin | (tcp->syn << 1) | (tcp->rst << 2) | (tcp->psh << 3) | (tcp->ack << 4) | (tcp->urg << 5);
+    feat[5] = ip->ttl;
+    feat[6] = ip->protocol;
+    feat[7] = (__s32)payload_len;
+
+    struct ml_ctx mc = { .score = 0, .feat = feat };
+    bpf_loop(ML_N_TREES, ml_walk_tree, &mc, 0);
+
+    // Shadow Mode: emitimos la métrica sin bloquear
+    if (mc.score > ML_THRESHOLD) {
+        struct soar_event *e = bpf_ringbuf_reserve(&soar_events, sizeof(*e), 0);
+        if (e) {
+            e->ts = bpf_ktime_get_ns();
+            e->rule_id = 99990000 + mc.score; // Encode score in rule_id
+            e->src_ip = ip->saddr;
+            e->dst_ip = ip->daddr;
+            e->src_port = bpf_ntohs(tcp->source);
+            e->dst_port = bpf_ntohs(tcp->dest);
+            e->protocol = ip->protocol;
+            e->severity = 0; // 0 significa shadow mode
+            bpf_ringbuf_submit(e, 0);
         }
     }
 

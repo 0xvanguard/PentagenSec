@@ -5,9 +5,9 @@ import ctypes
 import socket
 import struct
 
-ebpf_hits_total = Counter('antigravity_ebpf_hits_total', 'Hits from XDP', ['rule_id'])
-ebpf_drop_total = Counter('antigravity_ebpf_drop_total', 'Packets dropped by XDP')
-ebpf_load_duration = Histogram('antigravity_ebpf_load_duration_seconds', 'Time to load XDP')
+ebpf_hits_total = Counter('pentagensec_ebpf_hits_total', 'Hits from XDP', ['rule_id'])
+ebpf_drop_total = Counter('pentagensec_ebpf_drop_total', 'Packets dropped by XDP')
+ebpf_load_duration = Histogram('pentagensec_ebpf_load_duration_seconds', 'Time to load XDP')
 
 class EventHit(ctypes.Structure):
     _fields_ = [
@@ -23,42 +23,55 @@ class EventHit(ctypes.Structure):
 class SigmaXDP:
     """v4.2: Carga reglas Sigma → eBPF maps. NIST SI-3 malicious code detection."""
 
-    def __init__(self, iface='eth0', bpf_file='ebpf/sigma_filter.c'):
+    def __init__(self, iface='eth0', bpf_file='ebpf/sigma_filter.bpf.o'):
         self.iface = iface
+        self.bpf_file = bpf_file
+        self.pin_path = "/sys/fs/bpf/sigma_filter"
+        import subprocess
+        import os
+        
         with ebpf_load_duration.time():
-            self.bpf = BPF(src_file=bpf_file)
-            self.fn = self.bpf.load_func("sigma_xdp_filter", BPF.XDP)
-            self.bpf.attach_xdp(iface, self.fn, 0)
+            # 1. Load object via bpftool (CO-RE native)
+            os.makedirs(self.pin_path, exist_ok=True)
+            subprocess.run(["bpftool", "prog", "loadall", self.bpf_file, self.pin_path, "pinmaps", self.pin_path], check=False)
+            
+            # 2. Attach XDP
+            subprocess.run(["bpftool", "net", "attach", "xdp", "pinned", f"{self.pin_path}/sigma_xdp_filter", "dev", self.iface], check=False)
 
-        self.rules_map = self.bpf.get_table("rules_map")
-        self.hits_rb = self.bpf["hits_rb"]
-        self.hits_rb.open_ring_buffer(self._ringbuf_callback)
+            # 3. Use BCC just for map wrappers (no compilation, no headers needed)
+            self.bpf = BPF(text="")
+            self.rules_map = self.bpf.get_table("rules_map", f"{self.pin_path}/rules_map")
+            self.actions_map = self.bpf.get_table("actions_map", f"{self.pin_path}/actions_map")
+            self.config_map = self.bpf.get_table("config_map", f"{self.pin_path}/config_map")
+            self.soar_events = self.bpf.get_table("soar_events", f"{self.pin_path}/soar_events")
+            
+            # Note: For ringbuf, BCC's get_table can open it if pinned, but it's tricky.
+            # We'll use bpf_map_get_fd_by_path and the ringbuf python wrapper if needed.
+            # In v4.5.0, ringbuf is soar_events, which we'll handle in soar.py.
+            # For hits_rb, it's removed in v4.4.3.
 
     def _ringbuf_callback(self, cpu, data, size):
-        """Kernel → Userspace: hit recibido"""
-        event = ctypes.cast(data, ctypes.POINTER(EventHit)).contents
-        ebpf_hits_total.labels(rule_id=event.rule_id).inc()
-        # Aquí: envías a Kafka siem_raw o directo a DuckDB
-        # print(f"HIT: rule={event.rule_id} src={socket.inet_ntoa(struct.pack('!I', event.src_ip))}")
+        pass
 
     def load_sigma_rules(self, sigma_compiled: list[dict]):
-        """Convierte reglas Sigma → struct sigma_rule → mapa eBPF"""
         for i, rule in enumerate(sigma_compiled):
             if i >= 1024: break
             pattern = rule['pattern'].encode('utf-8')[:64]
             self.rules_map[ctypes.c_uint32(i)] = self.rules_map.Leaf(
                 rule['id'],
                 rule.get('dst_port', 0),
+                6, # TCP
                 len(pattern),
-                ctypes.cast(pattern, ctypes.POINTER(ctypes.c_uint8 * 64)).contents
+                (ctypes.c_uint8 * 64)(*pattern),
+                0
             )
 
     def poll(self):
-        """Llamar en loop para procesar ringbuf"""
         self.bpf.ring_buffer_poll()
 
     def detach(self):
-        self.bpf.remove_xdp(self.iface, 0)
+        import subprocess
+        subprocess.run(["bpftool", "net", "detach", "xdp", "dev", self.iface], check=False)
 
 import time
 from pathlib import Path
@@ -143,7 +156,7 @@ class SigmaXDPv43(SigmaXDP): # Hereda de v4.2
     def attach_consensus(self):
         """v4.4.2: Attach consensus a cgroupv2 para scoring"""
         import os
-        cgroup_path = "/sys/fs/cgroup/antigravity"
+        cgroup_path = "/sys/fs/cgroup/pentagensec"
         os.makedirs(cgroup_path, exist_ok=True)
         
         with open(os.path.join(cgroup_path, "cgroup.procs"), "w") as f:

@@ -1,10 +1,10 @@
 groups:
-  - name: antigravity_slo
+  - name: pentagensec_slo
     interval: 30s
     rules:
       # IR-4: MTTD violado
       - alert: BlastRadiusSLOViolation
-        expr: histogram_quantile(0.95, rate(antigravity_graph_query_duration_seconds_bucket[5m])) > 0.05
+        expr: histogram_quantile(0.95, rate(pentagensec_graph_query_duration_seconds_bucket[5m])) > 0.05
         for: 2m
         labels:
           severity: critical
@@ -15,7 +15,7 @@ groups:
 
       # SI-4: FP rate sube
       - alert: FPRateHigh
-        expr: rate(antigravity_fp_dropped_total[5m]) / rate(antigravity_events_ingested_total[5m]) > 0.05
+        expr: rate(pentagensec_fp_dropped_total[5m]) / rate(pentagensec_events_ingested_total[5m]) > 0.05
         for: 5m
         labels:
           severity: warning
@@ -26,7 +26,7 @@ groups:
 
       # AU-9: Kafka lag crítico
       - alert: KafkaConsumerLag
-        expr: max(antigravity_kafka_consumer_lag) > 10000
+        expr: max(pentagensec_kafka_consumer_lag) > 10000
         for: 1m
         labels:
           severity: critical
@@ -37,7 +37,7 @@ groups:
 
       # IR-4: Sigma spike
       - alert: SigmaHitSpike
-        expr: sum(rate(antigravity_sigma_hits_total{severity="critical"}[1m])) > 50
+        expr: sum(rate(pentagensec_sigma_hits_total{severity="critical"}[1m])) > 50
         for: 1m
         labels:
           severity: critical

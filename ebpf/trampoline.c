@@ -1,6 +1,6 @@
 // ebpf/trampoline.c
 // SPDX-License-Identifier: GPL-2.0
-// Generado por Antigravity v4.4.1 - Adaptive Core
+// Generado por pentagensec v4.4.1 - Adaptive Core
 
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>

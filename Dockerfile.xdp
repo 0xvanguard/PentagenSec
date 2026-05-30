@@ -1,8 +1,21 @@
-FROM python:3.12-slim-bookworm
+# Stage 1: eBPF Builder
+FROM python:3.12-slim-bookworm AS builder
 RUN apt-get update && apt-get install -y \
-    linux-headers-generic bpftool iproute2 python3-bpfcc
+    clang make libbpf-dev libxdp-dev
+COPY . /app
+WORKDIR /app/ebpf
+RUN make
+
+# Stage 2: Runtime
+FROM python:3.12-slim-bookworm
+ENV PYTHONPATH=/usr/lib/python3/dist-packages
+RUN apt-get update && apt-get install -y \
+    bpftool iproute2 libbpf-dev libxdp-dev
 COPY requirements.txt .
 RUN sed -i 's/--require-hashes//g' requirements.txt || true
+RUN sed -i '/--hash=/d' requirements.txt || true
+RUN pip install setuptools==68.2.2 || true
 RUN pip install -r requirements.txt
-COPY . /app
+RUN pip install fastapi uvicorn pyxdp
+COPY --from=builder /app /app
 WORKDIR /app

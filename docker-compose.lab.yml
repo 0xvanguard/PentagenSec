@@ -1,0 +1,62 @@
+version: '3.8'
+services:
+  xdp-filter:
+    build:
+      context: .
+      dockerfile: Dockerfile.xdp
+    privileged: true
+    cap_add: [NET_ADMIN, BPF, PERFMON, SYS_ADMIN]
+    devices:
+      - /dev/null
+    volumes:
+      - /sys/fs/bpf:/sys/fs/bpf
+      - ./rules:/rules:ro
+      - ebpf_artifacts:/out:ro
+      - /dev/hugepages:/dev/hugepages
+    command: python3 main.py --xdp --iface eth0 --af_xdp --metrics-port 9091
+    restart: unless-stopped
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+
+  injector:
+    image: alpine:3.20
+    command: sh -c "apk add tcpreplay && while true; do tcpreplay -i eth0 -l 0 -t -K /pcaps/mixed.pcap || sleep 1; done"
+    cap_add: [NET_ADMIN]
+    network_mode: service:xdp-filter
+    volumes:
+      - ./pcaps:/pcaps:ro
+    profiles: [lab]
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command: --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.retention.time=6h
+    ports: ["9090:9090"]
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-flamegraph-panel
+    volumes:
+      - ./infra/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./infra/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    ports: ["3001:3000"]
+    depends_on: [prometheus]
+
+  pentagensec-ui:
+    build: ./pentagensec-ui
+    ports: ["8080:80"]
+    environment:
+      - GRAFANA_URL=http://localhost:3000
+      - PROM_URL=http://localhost:9090
+    depends_on: [grafana]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 5s
+
+volumes:
+  ebpf_artifacts:

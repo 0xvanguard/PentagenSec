@@ -12,7 +12,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY main.py .
 
 # CM-8: Usuario no root
-RUN useradd -m -u 10001 antigravity
+RUN useradd -m -u 10001 pentagensec
 USER 10001
 
 # SA-22: Sin shell en prod

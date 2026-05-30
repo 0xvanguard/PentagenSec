@@ -108,12 +108,12 @@ services:
   # --- v3.2 Neo4j Graph ---
   neo4j:
     image: neo4j:latest
-    container_name: antigravity-neo4j
+    container_name: pentagensec-neo4j
     ports:
       - "7474:7474"   # HTTP Browser
       - "7687:7687"   # Bolt driver
     environment:
-      - NEO4J_AUTH=neo4j/antigravity  # CAMBIAR EN PROD
+      - NEO4J_AUTH=neo4j/pentagensec  # CAMBIAR EN PROD
       - NEO4J_PLUGINS=["apoc", "graph-data-science"]
       - NEO4J_server_memory_heap_initial__size=512m
       - NEO4J_server_memory_heap_max__size=2G
@@ -124,7 +124,7 @@ services:
     networks:
       - blueteam-net
     healthcheck:
-      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "antigravity", "RETURN 1"]
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "pentagensec", "RETURN 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -132,7 +132,7 @@ services:
   # --- v3.4 Kafka Streaming ---
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.1
-    container_name: antigravity-zookeeper
+    container_name: pentagensec-zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -144,7 +144,7 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:7.6.1
-    container_name: antigravity-kafka
+    container_name: pentagensec-kafka
     depends_on:
       zookeeper:
         condition: service_started
@@ -210,7 +210,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.xdp
-    container_name: antigravity-xdp
+    container_name: pentagensec-xdp
     network_mode: "host" # XDP necesita acceso a NIC host
     privileged: true
     cap_add:
@@ -229,7 +229,7 @@ services:
   # --- Día 4: Observabilidad ---
   prometheus:
     image: prom/prometheus:v2.54.1
-    container_name: antigravity-prometheus
+    container_name: pentagensec-prometheus
     ports:
       - "9090:9090"
     volumes:
@@ -243,11 +243,11 @@ services:
 
   grafana:
     image: grafana/grafana:11.2.0
-    container_name: antigravity-grafana
+    container_name: pentagensec-grafana
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=antigravity
+      - GF_SECURITY_ADMIN_PASSWORD=pentagensec
       - GF_USERS_DEFAULT_THEME=dark
     volumes:
       - grafana_data:/var/lib/grafana

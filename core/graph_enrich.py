@@ -5,7 +5,7 @@ from core.metrics import graph_query_duration
 class Neo4jEnricher:
     """v3.2: Graph de procesos para blast-radius <50ms"""
     def __init__(self, uri="bolt://localhost:7687"):
-        self.driver = GraphDatabase.driver(uri, auth=("neo4j", "antigravity"))
+        self.driver = GraphDatabase.driver(uri, auth=("neo4j", "pentagensec"))
         self._init_schema()
 
     def _init_schema(self):

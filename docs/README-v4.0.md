@@ -1,4 +1,4 @@
-# Antigravity v4.0 "Sentinel" - Release Notes
+# pentagensec v4.0 "Sentinel" - Release Notes
 
 ## SOC L4 Completo en Terminal
 
@@ -24,7 +24,7 @@
 docker-compose up -d
 python main.py --stream --metrics-port=9091 &
 python main.py --tui
-# Grafana: http://localhost:3000 admin/antigravity
+# Grafana: http://localhost:3000 admin/pentagensec
 ```
 
 ### Cadena de Custodia

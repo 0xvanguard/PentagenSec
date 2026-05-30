@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Antigravity v4.0 Sentinel TUI
+pentagensec v4.0 Sentinel TUI
 NIST: Timeline interactivo + Chain-of-custody + FP feedback
 Framework: Textual 0.66.0
 """
@@ -54,7 +54,7 @@ class SentinelTUI(App):
         self.consensus = AsymmetricConsensus(None, None, None) # Mocked init
 
     def compose(self) -> ComposeResult:
-        yield Header(f"Antigravity v4.0 Sentinel | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        yield Header(f"pentagensec v4.0 Sentinel | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         with Grid():
             yield DataTable(id="timeline", cursor_type="row")
             with Vertical():

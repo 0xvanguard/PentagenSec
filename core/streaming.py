@@ -25,7 +25,7 @@ class KafkaToDuckDB:
             value_deserializer=lambda m: json.loads(m.decode('utf-8')),
             auto_offset_reset='latest',
             enable_auto_commit=False, # Commit manual tras persistir
-            group_id='antigravity-v4'
+            group_id='pentagensec-v4'
         )
         self.db = SigmaDuckDB()
         self.graph = Neo4jEnricher()
