@@ -1,0 +1,18 @@
+{
+  "batch_id": "BATCH-20260530-1129-UTC",
+  "events": [
+    {"timestamp": "2026-05-23T02:11:09Z", "host": "EDGE-VPN-01", "event": "VPN login svc_backup", "src_ip": "91.92.240.12"},
+    {"timestamp": "2026-05-27T18:44:22Z", "host": "SQL-PROD-03", "event": "vssadmin delete shadows /all /quiet", "user": "svc_backup"},
+    {"timestamp": "2026-05-27T18:45:01Z", "host": "SQL-PROD-03", "event": "File created C:\\Windows\\Temp\\~.tmp 2.1MB", "user": "svc_backup"},
+    {"timestamp": "2026-05-29T03:20:15Z", "host": "SQL-PROD-03", "event": "DNS query microsoft-cdn.net", "user": "svc_backup"},
+    {"timestamp": "2026-05-30T11:01:33Z", "host": "SQL-PROD-03", "event": "wbadmin.exe enum volumes", "user": "svc_backup"},
+    {"timestamp": "2026-05-30T11:28:44Z", "host": "BACKUP-SRV-01", "event": "Logon Type 3 from SQL-PROD-03", "user": "svc_backup"}
+  ],
+  "asset_context": {
+    "SQL-PROD-03": {"criticality": "Critical", "tags": ["SAP", "PROD"]},
+    "BACKUP-SRV-01": {"criticality": "Critical", "tags": ["VEEAM", "BACKUP"]}
+  },
+  "identity_context": {
+    "svc_backup": {"role": "Domain Admin", "mfa": false, "password_age_days": 420}
+  }
+}

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual SOC - PentagenSec v4.6.0 GA</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #1e293b;
+            max-width: 850px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background-color: #f8fafc;
+        }
+        .page-container {
+            background: white;
+            padding: 50px 60px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .header-banner {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 8px;
+            margin-bottom: 40px;
+        }
+        .header-banner h1 {
+            border: none;
+            color: white;
+            margin-top: 0;
+            font-size: 2.2em;
+            margin-bottom: 10px;
+        }
+        .header-banner p { margin-bottom: 0; opacity: 0.9; font-size: 1.1em; }
+        h1, h2, h3 { color: #0f172a; margin-top: 1.5em; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.3em; }
+        h2 { font-size: 1.8em; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 25px; border-radius: 6px; overflow: hidden; }
+        th, td { border: 1px solid #e2e8f0; padding: 12px 16px; text-align: left; }
+        th { background-color: #f1f5f9; font-weight: 600; color: #334155; }
+        tr:nth-child(even) { background-color: #f8fafc; }
+        pre { background-color: #1e293b; color: #f8fafc; padding: 16px; border-radius: 6px; overflow: auto; }
+        code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 90%; background-color: #f1f5f9; padding: 0.2em 0.4em; border-radius: 4px; color: #b91c1c; }
+        pre code { background-color: transparent; padding: 0; color: inherit; }
+        blockquote { border-left: 4px solid #3b82f6; margin: 0; padding: 10px 20px; background-color: #eff6ff; border-radius: 0 6px 6px 0; color: #1e3a8a; }
+        
+        @media print {
+            body { background: none; padding: 0; margin: 0; }
+            .page-container { box-shadow: none; padding: 0; }
+            .header-banner { background: white !important; color: black !important; border: 2px solid black; }
+            .header-banner h1 { color: black !important; }
+            pre { border: 1px solid #cbd5e1; background-color: #f8fafc; color: black; }
+            table { page-break-inside: avoid; }
+            blockquote { border-left-color: #000; background-color: #fff; }
+        }
+    </style>
+</head>
+<body>
+    <div class="page-container">
+        <div class="header-banner">
+            <h1>MANUAL DE INSTALACIÓN Y OPERACIÓN</h1>
+            <p><strong>PentagenSec v4.6.0 GA</strong><br>
+            IPS/IDS + Deception + SOAR Kernel-Native<br>
+            Para uso en Centro de Operaciones de Seguridad (SOC)</p>
+        </div>
+
+        <p><strong>Versión del documento:</strong> 1.0<br>
+        <strong>Fecha:</strong> 30 Mayo 2026<br>
+        <strong>Audiencia:</strong> Analistas SOC, Ingenieros de Red, IT</p>
+
+        <h2>1. Descripción del Producto</h2>
+        <p><strong>PentagenSec</strong> es una plataforma de defensa que se ejecuta dentro del kernel Linux. Detecta y bloquea ataques en 10 microsegundos sin usar agentes ni firmas.</p>
+        <p><strong>Componentes:</strong></p>
+        <ol>
+            <li><strong>Sensor XDP:</strong> Programa eBPF que filtra tráfico en la tarjeta de red.</li>
+            <li><strong>Control Plane:</strong> Servicio web con dashboard en puerto 8080.</li>
+            <li><strong>Integración Telegram:</strong> Recibes alertas críticas en el móvil para aprobar/bloquear.</li>
+        </ol>
+
+        <h2>2. Requisitos Previos</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Requisito</th>
+                    <th>Detalle</th>
+                    <th>Cómo verificarlo</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Servidor</strong></td>
+                    <td>Servidor Linux dedicado</td>
+                    <td>Ubuntu 22.04 o superior</td>
+                </tr>
+                <tr>
+                    <td><strong>Permisos</strong></td>
+                    <td>Acceso <code>sudo</code> o usuario root</td>
+                    <td>Ejecuta <code>sudo -v</code></td>
+                </tr>
+                <tr>
+                    <td><strong>Red</strong></td>
+                    <td>1 interfaz conectada a la DMZ</td>
+                    <td><code>ip a</code> para ver nombre (ej. eth0)</td>
+                </tr>
+                <tr>
+                    <td><strong>Puertos</strong></td>
+                    <td>8080 TCP libre para dashboard</td>
+                    <td><code>sudo ss -tlnp | grep 8080</code> debe estar vacío</td>
+                </tr>
+                <tr>
+                    <td><strong>Telegram</strong></td>
+                    <td>Bot Token y Chat ID</td>
+                    <td>Te lo entrega el administrador</td>
+                </tr>
+            </tbody>
+        </table>
+        <blockquote><strong>Importante:</strong> Esta instalación debe hacerla el equipo de IT/Infraestructura. No se instala en laptops de usuario final.</blockquote>
+
+        <h2>3. Instalación Paso a Paso - 15 Minutos</h2>
+        <p><strong>Paso 1: Descargar el instalador</strong><br>
+        IT te entregará un archivo <code>pentagensec-4.6.0.tar.gz</code>. Cópialo al servidor.</p>
+        <pre><code>tar -xzf pentagensec-4.6.0.tar.gz
+cd pentagensec-4.6.0</code></pre>
+
+        <p><strong>Paso 2: Ejecutar instalador automático</strong></p>
+        <pre><code>sudo ./install.sh eth0</code></pre>
+
+        <p><strong>Paso 3: Verificar que funciona</strong><br>
+        Abre el navegador en <code>http://IP_DEL_SERVIDOR:8080</code>. Debes ver el estado `XDP Active` en verde.</p>
+
+        <h2>4. Uso Diario para Analistas SOC</h2>
+        <h3>4.1 Pantalla Principal del Dashboard</h3>
+        <table>
+            <tbody>
+                <tr><td><strong>Gauge ML Anomaly Score</strong></td><td>0-100. Si pasa de 42 y se pone rojo, hay anomalía.</td></tr>
+                <tr><td><strong>ML Blocks/s</strong></td><td>Ataques bloqueados por segundo. 0 = modo monitor.</td></tr>
+                <tr><td><strong>Attackers Tarred</strong></td><td>Atacantes en TARPIT. Cada +1 es un escáner neutralizado.</td></tr>
+                <tr><td><strong>Active Actions</strong></td><td>Tabla con IPs bloqueadas y razón.</td></tr>
+            </tbody>
+        </table>
+
+        <h3>4.2 Flujo de una Alerta Real</h3>
+        <ol>
+            <li><strong>Telegram</strong>: <code>🚨 P1 - C2 Beaconing detectado</code></li>
+            <li><strong>Dashboard</strong>: Gauge en rojo 47.3.</li>
+            <li><strong>Acción</strong>: <code>APPROVE</code> (Activa TARPIT), <code>REJECT</code> (Falso positivo), o <code>ESCALATE</code>.</li>
+        </ol>
+
+        <h2>5. Solución de Problemas Básicos</h2>
+        <table>
+            <thead><tr><th>Problema</th><th>Solución para Analista</th></tr></thead>
+            <tbody>
+                <tr><td>Dashboard no carga</td><td>Llama a IT. Diles: "reiniciar servicio pentagensec"</td></tr>
+                <tr><td>Todo rojo (sin ataque)</td><td>Haz <code>REJECT</code> y avisa a L3 para ajustar umbral ML</td></tr>
+                <tr><td>Bloqueé servidor legal</td><td>Contacta a L3 inmediato. Rollback en &lt;30s</td></tr>
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
